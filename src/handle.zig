@@ -30,10 +30,8 @@ pub fn run(handler: handlerFn) void {
     var fetcher = Fetcher.init(allocs.gpa, allocs.arena);
     defer fetcher.deinit();
 
-    var env = lambda.ReservedEnv.load() catch |e| {
-        lambda.log_runtime.err("[Main] Loading environment variables failed: {s}", .{@errorName(e)});
-        return;
-    };
+    var env = lambda.ReservedEnv.load() catch |e|
+        return lambda.log_runtime.err("[Main] Loading environment variables failed: {s}", .{@errorName(e)});
 
     const next_url = api.urlInvocationNext(allocs.gpa, env.runtime_api) catch |e|
         return initFail(allocs.gpa, env.runtime_api, &fetcher, e, "Interperting next invocation’s url failed");
@@ -55,13 +53,16 @@ fn eventInvocation(
 ) bool {
     // Request the next event
     const next = api.sendInvocationNext(allocs.arena, fetcher, next_url) catch |e| {
-        lambda.log_runtime.err("[Event Loop] Event-loop process failed: {s}", .{@errorName(e)});
+        lambda.log_runtime.err("[Event Loop] Requesting the next invocation failed: {s}", .{@errorName(e)});
         return false;
     };
 
     switch (next) {
         // Failed retrieving the event
-        .forbidden => return false,
+        .forbidden => |e| {
+            lambda.log_runtime.err("[Event Loop] Requesting the next invocation failed: {s}.\n{s}", .{ e.error_type, e.message });
+            return true;
+        },
 
         // Process the event
         .success => |event| {
@@ -77,12 +78,18 @@ fn eventInvocation(
             return if (handler(allocs, context, event.payload)) |output|
                 handlerSuccess(allocs.arena, env.runtime_api, request_id, fetcher, output)
             else |e|
-                handlerFail(allocs.arena, env.runtime_api, request_id, fetcher, e);
+                handlerFail(allocs.arena, env.runtime_api, request_id, fetcher, e, @errorReturnTrace());
         },
     }
 }
 
-fn handlerSuccess(arena: std.mem.Allocator, api_host: []const u8, request_id: []const u8, fetcher: *Fetcher, output: []const u8) bool {
+fn handlerSuccess(
+    arena: std.mem.Allocator,
+    api_host: []const u8,
+    request_id: []const u8,
+    fetcher: *Fetcher,
+    output: []const u8,
+) bool {
     const url = api.urlInvocationSuccess(arena, api_host, request_id) catch |e| {
         lambda.log_runtime.err("[Handler Success] Interperting url failed: {s}", .{@errorName(e)});
         return false;
@@ -93,22 +100,31 @@ fn handlerSuccess(arena: std.mem.Allocator, api_host: []const u8, request_id: []
         return false;
     };
 
-    return switch (result) {
-        .accepted => true,
-        .bad_request, .forbidden, .payload_too_large => false,
-    };
+    switch (result) {
+        .accepted => {},
+        .bad_request, .forbidden, .payload_too_large => |e| {
+            lambda.log_runtime.err("[Handler Success] Sending the invocation’s response failed: {s}.\n{s}", .{ e.error_type, e.message });
+        },
+    }
+    return true;
 }
 
-const FALLBACK_HANDLER_LOG = "[Event Loop] Handler returned error: {s}";
 fn handlerFail(
     arena: std.mem.Allocator,
     api_host: []const u8,
     request_id: []const u8,
     fetcher: *Fetcher,
     handler_error: anyerror,
+    trace: ?*std.builtin.StackTrace,
 ) bool {
+    @setCold(true);
+    const log = "[Event Loop] The handler returned an error `{s}`.";
+    if (trace) |t|
+        lambda.log_runtime.err(log ++ "{?}", .{ @errorName(handler_error), t })
+    else
+        lambda.log_runtime.err(log, .{@errorName(handler_error)});
+
     const url = api.urlInvocationFail(arena, api_host, request_id) catch |e| {
-        lambda.log_runtime.err(FALLBACK_HANDLER_LOG, .{@errorName(handler_error)});
         lambda.log_runtime.err("[Handler Failure] Interperting url failed: {s}", .{@errorName(e)});
         return false;
     };
@@ -117,18 +133,19 @@ fn handlerFail(
         .error_type = @errorName(handler_error),
         .message = "The handler returned an error response.",
     }) catch |e| {
-        lambda.log_runtime.err(FALLBACK_HANDLER_LOG, .{@errorName(handler_error)});
         lambda.log_runtime.err("[Handler Failure] Sending the invocation’s error report failed: {s}", .{@errorName(e)});
         return false;
     };
 
-    return switch (result) {
-        .accepted => true,
-        .bad_request, .forbidden => false,
-    };
+    switch (result) {
+        .accepted => {},
+        .bad_request, .forbidden => |e| {
+            lambda.log_runtime.err("[Handler Success] Sending the invocation’s error report failed: {s}.\n{s}", .{ e.error_type, e.message });
+        },
+    }
+    return true;
 }
 
-const FALLBACK_INIT_LOG = "[Main] {s}: {s}";
 fn initFail(
     allocator: std.mem.Allocator,
     api_host: []const u8,
@@ -136,24 +153,27 @@ fn initFail(
     init_error: anyerror,
     message: []const u8,
 ) void {
-    const url = api.urlInitFail(allocator, api_host) catch |e| {
-        lambda.log_runtime.err(FALLBACK_INIT_LOG, .{ message, @errorName(init_error) });
-        lambda.log_runtime.err("[Init Failure] Interperting url failed: {s}", .{@errorName(e)});
-        return;
-    };
+    @setCold(true);
+    lambda.log_runtime.err("[Main] {s}: {s}", .{ message, @errorName(init_error) });
 
-    const error_type = std.fmt.allocPrint(allocator, "Runtime.{s}", .{@errorName(init_error)}) catch |e| {
-        lambda.log_runtime.err(FALLBACK_INIT_LOG, .{ message, @errorName(init_error) });
-        lambda.log_runtime.err("[Init Failure] Composing error type failed: {s}", .{@errorName(e)});
-        return;
-    };
+    const url = api.urlInitFail(allocator, api_host) catch |e|
+        return lambda.log_runtime.err("[Init Failure] Interperting url failed: {s}", .{@errorName(e)});
 
-    _ = api.sendInitFail(allocator, fetcher, url, error_type, api.ErrorRequest{
+    const error_type = std.fmt.allocPrint(allocator, "Runtime.{s}", .{@errorName(init_error)}) catch |e|
+        return lambda.log_runtime.err("[Init Failure] Composing error type failed: {s}", .{@errorName(e)});
+
+    const result = api.sendInitFail(allocator, fetcher, url, error_type, api.ErrorRequest{
         .error_type = @errorName(init_error),
         .message = "Runtime initialization failed.",
     }) catch |e| {
-        lambda.log_runtime.err(FALLBACK_INIT_LOG, .{ message, @errorName(init_error) });
         lambda.log_runtime.err("[Init Failure] Sending the initialization’s error report failed: {s}", .{@errorName(e)});
         return;
     };
+
+    switch (result) {
+        .accepted => {},
+        .forbidden => |e| {
+            lambda.log_runtime.err("[Init Failure] Sending the initialization’s error report failed: {s}.\n{s}", .{ e.error_type, e.message });
+        },
+    }
 }

@@ -11,12 +11,12 @@ Write AWS Lambda functions in Zig.
 ### Benchmark
 Using zig allows creating small and fast functions.
 
-Running the simple _echo demo_ on _Arm (512MB)_:
+Running a basic _Echo_ demo on _arm64 (512 MB)_:
 - Cold start: ~10ms
 - Invocation: ~1.5ms
-- Max memory: 13 MB
-- Function size: 2.0 MB
-- Executable size: 10.1 MB
+- Max memory: 14 MB
+- Function size: 1.7 MB
+- Executable size: 8.1 MB
 
 Usage
 -----
@@ -54,28 +54,42 @@ fn handler(allocs: lambda.Allocators, context: lambda.Context, event: []const u8
 
 ### Distribute
 
-1. Build for _Linux_ with `x86_64` or `aarch64` architectures.
+1. Build for **Linux** with `aarch64` (`neoverse_n1`+`neon`) or `x86_64` (+`avx2`) architecture.
 2. Name the executable `bootstrap`.
 3. Archive the executable into a **zip**.
-4. Upload the archive to Lambda through the console, CLI, SAM or any CI solution.
+4. Upload the archive to Lambda (using _Amazon Linux 2023_ or another **OS-only runtime**). This shouls work through the console, CLI, SAM or anyCI solution.
 
 Demos
 -----
 
 ### Echo
-Prints the provdedid payload.
+Returns the provided payload.
 
 ```zig
 zig build demo:echo --release
 ```
 
 ### Debug
-Print the function metadata, env variables and the provided payload.
+Returns the function’s metadata, environment variables and the provided payload.
 
 🛑 _May expose sensative data to the public._
 
 ```zig
 zig build demo:debug --release
+```
+
+### Fail: Handler Error
+Always returns an error; the runtime logs the error to _CloudWatch_.
+
+```zig
+zig build demo:fail --release
+```
+
+### Fail: Oversized Output
+Returns an output larger than the Lambda limit; the runtime logs an error to _CloudWatch_.
+
+```zig
+zig build demo:oversize --release
 ```
 
 ## Acknowledgment

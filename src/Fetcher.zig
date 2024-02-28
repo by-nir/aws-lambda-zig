@@ -38,7 +38,9 @@ pub fn Result(comptime Status: type) type {
 }
 
 pub const Options = struct {
-    request: RequestHeaders = .{},
+    request: RequestHeaders = .{
+        .user_agent = .{ .override = "aws-lambda-zig/" ++ @import("builtin").zig_version_string },
+    },
     headers: ?[]const Header = null,
     payload: ?[]const u8 = null,
 };

@@ -1,8 +1,5 @@
-//! Prints the provdedid payload.
+//! Returns the provided payload.
 
-const std = @import("std");
-const http = std.http;
-const Allocator = std.mem.Allocator;
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
