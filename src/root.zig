@@ -12,7 +12,7 @@ pub const Allocators = handle.Allocators;
 /// Metadata for processing the event.
 pub const Context = lambda.Context;
 
-/// Logging scope for the handler function.
+/// The handler’s logging scope.
 pub const log = lambda.log_handler;
 
 test {

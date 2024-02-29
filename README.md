@@ -12,8 +12,8 @@ Write AWS Lambda functions in Zig.
 Using zig allows creating small and fast functions.
 
 Running a basic _Echo_ demo on _arm64 (512 MB)_:
-- Cold start: ~10ms
-- Invocation: ~1.5ms
+- Cold init duration: ~10ms
+- Invocation duration: ~1.5ms
 - Max memory: 14 MB
 - Function size: 1.7 MB
 - Executable size: 8.1 MB
@@ -36,9 +36,8 @@ const Allocators = lambda.Allocators;
 /// Metadata for processing the event (including env variables).
 const Context = lambda.Context;
 
-/// Logging scope for the handler function.
-///
-/// In release builds only _error_ level logs will be retained and sent to CloudWatch.
+/// The handler’s logging scope.
+/// In release builds only _error_ level logs will be sent to CloudWatch.
 const log = lambda.log;
 
 /// Entry point for the lambda runtime.
@@ -47,7 +46,8 @@ pub fn main() void {
 }
 
 /// Eeach event is processed separetly by this function.
-fn handler(allocs: lambda.Allocators, context: lambda.Context, event: []const u8) anyerror![]const u8 {
+/// The function must have the following signature:
+fn handler(allocs: lambda.Allocators, context: *const lambda.Context, event: []const u8) anyerror![]const u8 {
     return "Hey there!";
 }
 ```
