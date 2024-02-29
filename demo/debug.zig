@@ -6,10 +6,10 @@ const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.runHandler(handler);
+    lambda.serve(handler);
 }
 
-fn handler(allocs: lambda.Allocators, ctx: *const lambda.Context, event: []const u8) anyerror![]const u8 {
+fn handler(allocs: lambda.Allocators, ctx: *const lambda.Context, event: []const u8) ![]const u8 {
     var str = try std.ArrayList(u8).initCapacity(allocs.arena, 1024);
     const writer = str.writer();
     try writer.print(

@@ -1,23 +1,25 @@
-const handle = @import("handle.zig");
 const lambda = @import("lambda.zig");
-
-/// The entry point for the AWS Lambda function.
-///
-/// Accepts a const reference to a handler function that will process eeach event separetly.
-pub const runHandler = handle.run;
-
-/// Provides a persistant GPA and an ephemeral per-event arena.
-pub const Allocators = handle.Allocators;
-
-/// Metadata for processing the event.
-pub const Context = lambda.Context;
+const Runtime = @import("Runtime.zig");
+const server = @import("server.zig");
 
 /// The handler’s logging scope.
 pub const log = lambda.log_handler;
 
+/// A persistant GPA and an invocation-scoped Arena.
+pub const Allocators = lambda.Allocators;
+
+/// Metadata for processing the event.
+pub const Context = lambda.Context;
+
+/// The entry point for the AWS Lambda function.
+///
+/// Accepts a const reference to a handler function that will process each event separetly.
+pub const serve = server.runBuffer;
+
 test {
-    _ = handle;
-    _ = lambda;
-    _ = @import("Fetcher.zig");
     _ = @import("api_runtime.zig");
+    _ = @import("Fetcher.zig");
+    _ = lambda;
+    _ = Runtime;
+    _ = server;
 }

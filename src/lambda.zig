@@ -6,30 +6,17 @@ pub const log_runtime = std.log.scoped(.Runtime);
 /// The handler’s logging scope.
 pub const log_handler = std.log.scoped(.Handler);
 
-/// Parse environment variables.
-pub fn getEnvVars(allocator: std.mem.Allocator) !std.process.EnvMap {
-    var env = std.process.EnvMap.init(allocator);
-    if (@import("builtin").link_libc) {
-        var ptr = std.c.environ;
-        while (ptr[0]) |line| : (ptr += 1) try parseAndPutVar(&env, line);
-    } else {
-        for (std.os.environ) |line| try parseAndPutVar(&env, line);
-    }
-    return env;
-}
+pub const Allocators = struct {
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+};
 
-// Based on std.process.getEnvMap
-fn parseAndPutVar(map: *std.process.EnvMap, line: [*]u8) !void {
-    var line_i: usize = 0;
-    while (line[line_i] != 0 and line[line_i] != '=') : (line_i += 1) {}
-    const key = line[0..line_i];
-
-    var end_i: usize = line_i;
-    while (line[end_i] != 0) : (end_i += 1) {}
-    const value = line[line_i + 1 .. end_i];
-
-    try map.putMove(key, value);
-}
+pub const handlerFn = *const fn (
+    allocs: Allocators,
+    context: *const Context,
+    /// The event’s JSON payload
+    event: []const u8,
+) anyerror![]const u8;
 
 pub const Context = struct {
     const DEFAULT_REGION: []const u8 = "us-east-1";
@@ -43,7 +30,7 @@ pub const Context = struct {
     };
 
     //
-    // Function
+    // Function Meta
     //
 
     /// Environment variables; user-provided and [function meta](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html#configuration-envvars-runtime).
@@ -86,7 +73,7 @@ pub const Context = struct {
     log_stream: []const u8 = &[_]u8{},
 
     //
-    // Invocation
+    // Invocation Meta
     //
 
     /// AWS request ID associated with the request.
@@ -109,7 +96,14 @@ pub const Context = struct {
     /// Information about the Amazon Cognito identity provider when invoked through the AWS Mobile SDK.
     cognito_identity: []const u8 = &[_]u8{},
 
-    pub fn from(env: *const std.process.EnvMap) !Context {
+    //
+    // Methods
+    //
+
+    pub fn init(allocator: std.mem.Allocator) !Context {
+        var env = try loadEnv(allocator);
+        errdefer env.deinit();
+
         var self = Context{ .env = env };
 
         if (env.get("AWS_LAMBDA_RUNTIME_API")) |v| {
@@ -156,5 +150,36 @@ pub const Context = struct {
         if (env.get("_X_AMZN_TRACE_ID")) |v| self.xray_trace = v;
 
         return self;
+    }
+
+    pub fn deinit(self: *Context, allocator: std.mem.Allocator) void {
+        @constCast(self.env).hash_map.deinit();
+        allocator.destroy(self.env);
+    }
+
+    fn loadEnv(allocator: std.mem.Allocator) !*std.process.EnvMap {
+        const env = try allocator.create(std.process.EnvMap);
+        env.* = std.process.EnvMap.init(allocator);
+
+        if (@import("builtin").link_libc) {
+            var ptr = std.c.environ;
+            while (ptr[0]) |line| : (ptr += 1) try parseAndPutVar(env, line);
+        } else {
+            for (std.os.environ) |line| try parseAndPutVar(env, line);
+        }
+        return env;
+    }
+
+    // Based on std.process.getEnvMap
+    fn parseAndPutVar(map: *std.process.EnvMap, line: [*]u8) !void {
+        var line_i: usize = 0;
+        while (line[line_i] != 0 and line[line_i] != '=') : (line_i += 1) {}
+        const key = line[0..line_i];
+
+        var end_i: usize = line_i;
+        while (line[end_i] != 0) : (end_i += 1) {}
+        const value = line[line_i + 1 .. end_i];
+
+        try map.putMove(key, value);
     }
 };

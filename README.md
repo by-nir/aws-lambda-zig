@@ -2,11 +2,12 @@
 
 Write AWS Lambda functions in Zig.
 
-- [x] Runtime API: _2018-06-01 (1.0.3)_
-- [ ] Streaming
-- [ ] Layers
-- [ ] Extensions API: _2020-01-01 (1.0.1)_
+- [x] Runtime API
+- [ ] Extensions API
 - [ ] Telemetry API
+- [x] CloudWatch & X-Ray integration
+- [ ] Response Streaming
+- [ ] Layers
 
 ### Benchmark
 Using zig allows creating small and fast functions.
@@ -25,29 +26,27 @@ Usage
 1. Add this package as a dependency to your project.
 2. Import the `aws-lambda` module in your `build.zig` script. 
 
-### Code
+### Minimal Code
 
 ```zig
 const lambda = @import("aws-lambda");
 
-/// Provides a persistant GPA and an ephemeral per-event arena.
-const Allocators = lambda.Allocators;
-
-/// Metadata for processing the event (including env variables).
-const Context = lambda.Context;
-
 /// The handler’s logging scope.
-/// In release builds only _error_ level logs will be sent to CloudWatch.
+/// In release builds only _error_ level logs are sent to CloudWatch.
 const log = lambda.log;
 
 /// Entry point for the lambda runtime.
 pub fn main() void {
-    lambda.runHandler(handler);
+    lambda.serve(handler);
 }
 
 /// Eeach event is processed separetly by this function.
 /// The function must have the following signature:
-fn handler(allocs: lambda.Allocators, context: *const lambda.Context, event: []const u8) anyerror![]const u8 {
+fn handler(
+    allocs: lambda.Allocators,      // Persistant GPA & invocation-scoped Arena.
+    context: *const lambda.Context, // Function metadata (including env).
+    event: []const u8,              // JSON payload.
+) ![]const u8 {
     return "Hey there!";
 }
 ```

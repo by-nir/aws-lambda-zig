@@ -1,7 +1,5 @@
 const std = @import("std");
 
-// TODO: Zip step (`@by-nir/zig-build-steps` package)
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptionsQueryOnly(.{});
     const optimize = b.standardOptimizeOption(.{
@@ -31,11 +29,10 @@ pub fn build(b: *std.Build) void {
     //
 
     const demo_target = resolveDemoTarget(b, target);
-
-    addDemo(b, demo_target, optimize, "echo", lib);
-    addDemo(b, demo_target, optimize, "debug", lib);
-    addDemo(b, demo_target, optimize, "fail", lib);
-    addDemo(b, demo_target, optimize, "oversize", lib);
+    const demos = .{ "echo", "debug", "fail", "oversize" };
+    inline for (demos) |name| {
+        addDemo(b, demo_target, optimize, name, lib);
+    }
 }
 
 fn resolveDemoTarget(b: *std.Build, query: std.Target.Query) std.Build.ResolvedTarget {

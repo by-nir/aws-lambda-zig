@@ -3,12 +3,12 @@
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.runHandler(handler);
+    lambda.serve(handler);
 }
 
 // Max lambda payload size is 6MB.
 const output: [8 * 1024 * 1024]u8 = undefined;
 
-fn handler(_: lambda.Allocators, _: *const lambda.Context, _: []const u8) anyerror![]const u8 {
+fn handler(_: lambda.Allocators, _: *const lambda.Context, _: []const u8) ![]const u8 {
     return &output;
 }
