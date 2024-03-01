@@ -13,8 +13,8 @@ fn handler(allocs: lambda.Allocators, ctx: *const lambda.Context, event: []const
     var str = try std.ArrayList(u8).initCapacity(allocs.arena, 1024);
     const writer = str.writer();
     try writer.print(
-        "{{\"function_meta\":{{\"api_host\":\"{s}\",\"aws_region\":\"{s}\",\"aws_access_id\":\"{s}\",\"aws_access_secret\":\"{s}\",\"aws_session_token\":\"{s}\",\"function_name\":\"{s}\",\"function_version\":\"{s}\",\"function_size\":{d},\"function_init_type\":\"{s}\",\"function_handler\":\"{s}\",\"log_group\":\"{s}\",\"log_stream\":\"{s}\"}},",
-        .{ ctx.api_host, ctx.aws_region, ctx.aws_access_id, ctx.aws_access_secret, ctx.aws_session_token, ctx.function_name, ctx.function_version, ctx.function_size, @tagName(ctx.function_init_type), ctx.function_handler, ctx.log_group, ctx.log_stream },
+        "{{\"function_meta\":{{\"api_origin\":\"{s}\",\"aws_region\":\"{s}\",\"aws_access_id\":\"{s}\",\"aws_access_secret\":\"{s}\",\"aws_session_token\":\"{s}\",\"function_name\":\"{s}\",\"function_version\":\"{s}\",\"function_size\":{d},\"function_init_type\":\"{s}\",\"function_handler\":\"{s}\",\"log_group\":\"{s}\",\"log_stream\":\"{s}\"}},",
+        .{ ctx.api_origin, ctx.aws_region, ctx.aws_access_id, ctx.aws_access_secret, ctx.aws_session_token, ctx.function_name, ctx.function_version, ctx.function_size, @tagName(ctx.function_init_type), ctx.function_handler, ctx.log_group, ctx.log_stream },
     );
     try writer.print(
         "\"invocation_meta\":{{\"request_id\":\"{s}\",\"xray_trace\":\"{s}\",\"invoked_arn\":\"{s}\",\"deadline_ms\":{d},\"client_context\":\"{s}\",\"cognito_identity\":\"{s}\"}},\"payload\":{s},\"env\":{{",

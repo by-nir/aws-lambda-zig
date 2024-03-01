@@ -1,35 +1,19 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const Fetcher = @import("Fetcher.zig");
+const Client = @import("Client.zig");
+const lambda = @import("lambda.zig");
 
 const ERROR_HEAD_TYPE = "Lambda-Runtime-Function-Error-Type";
 const ERROR_CONTENT_TYPE = "application/vnd.aws.lambda.error+json";
 
-const API_VERSION = "2018-06-01";
-pub const URL_INIT_FAIL: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/init/error";
-pub const URL_INVOC_NEXT: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/next";
-pub const URL_INVOC_SUCCESS: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/{s}/response";
-pub const URL_INVOC_FAIL: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/{s}/error";
+const API_BASE = "/2018-06-01/runtime/";
+const URL_INIT_FAIL: []const u8 = API_BASE ++ "init/error";
+const URL_INVOC_NEXT: []const u8 = API_BASE ++ "invocation/next";
+pub const URL_INVOC_SUCCESS: []const u8 = API_BASE ++ "invocation/{s}/response";
+pub const URL_INVOC_FAIL: []const u8 = API_BASE ++ "invocation/{s}/error";
 
-pub const SendFetchError = error{ ParseError, ContainerError, UnknownStatus } || Fetcher.Error;
-
-const RuntimeStatus = enum(u9) {
-    success = 200,
-    accepted = 202,
-    bad_request = 400,
-    forbidden = 403,
-    payload_too_large = 413,
-    /// Non-recoverable state.
-    /// **runtime should exit promptly.**
-    container_error = 500,
-    _,
-};
-
-pub const StatusResponse = struct {
-    /// Status information.
-    status: []const u8,
-};
+pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus } || Allocator.Error;
 
 pub const InitFailResult = union(enum) {
     accepted: StatusResponse,
@@ -41,18 +25,17 @@ pub const InitFailResult = union(enum) {
 ///
 /// `error_type` expects format _"category.reason"_ (example: _"Runtime.ConfigInvalid"_).
 pub fn sendInitFail(
-    allocator: Allocator,
-    fetcher: *Fetcher,
-    url: []const u8,
+    arena: Allocator,
+    client: *Client,
     err: anyerror,
     message: []const u8,
     trace: ?ErrorTrace,
-) SendFetchError!InitFailResult {
-    const req = ErrorRequest.from(allocator, "Runtime", err, message, trace);
-    const fetch = try sendError(allocator, fetcher, url, @errorName(err), req);
+) Error!InitFailResult {
+    const req = ErrorRequest.from(arena, "Runtime", err, message, trace);
+    const fetch = try sendError(arena, client, URL_INIT_FAIL, @errorName(err), req);
     return switch (fetch.status) {
-        .accepted => .{ .accepted = StatusResponse{ .status = fetch.body } },
-        .forbidden => .{ .forbidden = try ErrorResponse.parse(allocator, fetch.body) },
+        .accepted => .{ .accepted = try StatusResponse.parse(arena, fetch.body) },
+        .forbidden => .{ .forbidden = try ErrorResponse.parse(arena, fetch.body) },
         .container_error => error.ContainerError,
         else => error.UnknownStatus,
     };
@@ -65,14 +48,10 @@ pub const InvocationNextResult = union(enum) {
 
 /// This is an iterator-style blocking API call. Runtime makes this request when
 /// it is ready to process a new invoke.
-pub fn sendInvocationNext(
-    arena: Allocator,
-    fetcher: *Fetcher,
-    url: []const u8,
-) SendFetchError!InvocationNextResult {
-    var fetch = try fetcher.send(RuntimeStatus, .GET, url, .{});
+pub fn sendInvocationNext(arena: Allocator, client: *Client) Error!InvocationNextResult {
+    var fetch = try sendRequest(arena, client, .GET, URL_INVOC_NEXT, .{});
     return switch (fetch.status) {
-        .success => .{ .success = InvocationEvent.parse(&fetch.headers, fetch.body) },
+        .success => .{ .success = try InvocationEvent.parse(arena, &fetch.headers, fetch.body) },
         .forbidden => .{ .forbidden = try ErrorResponse.parse(arena, fetch.body) },
         .container_error => error.ContainerError,
         else => error.UnknownStatus,
@@ -103,7 +82,7 @@ pub const InvocationEvent = struct {
     /// JSON document specific to the invoking service’s event.
     payload: []const u8,
 
-    pub fn parse(headers: *Fetcher.HeaderIterator, payload: []const u8) InvocationEvent {
+    pub fn parse(arena: Allocator, headers: *Client.HeaderIterator, payload: []const u8) !InvocationEvent {
         var event = InvocationEvent{
             .request_id = undefined,
             .xray_trace = undefined,
@@ -114,17 +93,17 @@ pub const InvocationEvent = struct {
 
         while (headers.next()) |header| {
             if (std.mem.eql(u8, "Lambda-Runtime-Aws-Request-Id", header.name))
-                event.request_id = header.value
+                event.request_id = try duplicate(arena, header.value)
             else if (std.mem.eql(u8, "Lambda-Runtime-Trace-Id", header.name))
-                event.xray_trace = header.value
+                event.xray_trace = try duplicate(arena, header.value)
             else if (std.mem.eql(u8, "Lambda-Runtime-Invoked-Function-Arn", header.name))
-                event.invoked_arn = header.value
+                event.invoked_arn = try duplicate(arena, header.value)
             else if (std.mem.eql(u8, "Lambda-Runtime-Deadline-Ms", header.name))
                 event.deadline_ms = std.fmt.parseInt(u64, header.value, 10) catch 0
             else if (std.mem.eql(u8, "Lambda-Runtime-Client-Context", header.name))
-                event.client_context = header.value
+                event.client_context = try duplicate(arena, header.value)
             else if (std.mem.eql(u8, "Lambda-Runtime-Cognito-Identity", header.name))
-                event.cognito_identity = header.value;
+                event.cognito_identity = try duplicate(arena, header.value);
         }
 
         return event;
@@ -133,6 +112,12 @@ pub const InvocationEvent = struct {
     /// Remaining time in **milliseconds** before the function execution aborts.
     pub fn remaining(self: InvocationEvent) u64 {
         return @as(u64, @intCast(std.time.milliTimestamp())) - self.deadline_timestamp;
+    }
+
+    fn duplicate(arena: Allocator, src: []const u8) ![]const u8 {
+        const dest = try arena.alloc(u8, src.len);
+        @memcpy(dest, src);
+        return dest;
     }
 };
 
@@ -146,15 +131,15 @@ pub const InvocationSuccessResult = union(enum) {
 /// Runtime makes this request in order to submit a response.
 pub fn sendInvocationSuccess(
     arena: Allocator,
-    fetcher: *Fetcher,
-    url: []const u8,
+    client: *Client,
+    path: []const u8,
     payload: []const u8,
-) SendFetchError!InvocationSuccessResult {
-    const fetch = try fetcher.send(RuntimeStatus, .POST, url, .{
+) Error!InvocationSuccessResult {
+    const fetch = try sendRequest(arena, client, .POST, path, .{
         .payload = payload,
     });
     return switch (fetch.status) {
-        .accepted => .{ .accepted = StatusResponse{ .status = fetch.body } },
+        .accepted => .{ .accepted = try StatusResponse.parse(arena, fetch.body) },
         .bad_request => .{ .bad_request = try ErrorResponse.parse(arena, fetch.body) },
         .forbidden => .{ .forbidden = try ErrorResponse.parse(arena, fetch.body) },
         .payload_too_large => .{ .payload_too_large = try ErrorResponse.parse(arena, fetch.body) },
@@ -176,16 +161,16 @@ pub const InvocationFailResult = union(enum) {
 /// `error_type` expects format _"category.reason"_ (example: _"Runtime.ConfigInvalid"_).
 pub fn sendInvocationFail(
     arena: Allocator,
-    fetcher: *Fetcher,
-    url: []const u8,
+    client: *Client,
+    path: []const u8,
     err: anyerror,
     message: []const u8,
     trace: ?ErrorTrace,
-) SendFetchError!InvocationFailResult {
+) Error!InvocationFailResult {
     const req = ErrorRequest.from(arena, "Handler", err, message, trace);
-    const fetch = try sendError(arena, fetcher, url, @errorName(err), req);
+    const fetch = try sendError(arena, client, path, @errorName(err), req);
     return switch (fetch.status) {
-        .accepted => .{ .accepted = StatusResponse{ .status = fetch.body } },
+        .accepted => .{ .accepted = try StatusResponse.parse(arena, fetch.body) },
         .bad_request => .{ .bad_request = try ErrorResponse.parse(arena, fetch.body) },
         .forbidden => .{ .forbidden = try ErrorResponse.parse(arena, fetch.body) },
         .container_error => error.ContainerError,
@@ -199,7 +184,7 @@ const ErrorRequest = struct {
     error_type: []const u8,
     stack_trace: []const []const u8,
 
-    pub fn from(allocator: std.mem.Allocator, comptime cat: []const u8, err: anyerror, message: []const u8, trace: ?ErrorTrace) ErrorRequest {
+    pub fn from(allocator: Allocator, comptime cat: []const u8, err: anyerror, message: []const u8, trace: ?ErrorTrace) ErrorRequest {
         const err_type = std.fmt.allocPrint(allocator, cat ++ ".{s}", .{@errorName(err)}) catch @errorName(err);
         return .{
             .message = message,
@@ -216,12 +201,11 @@ pub const ErrorResponse = struct {
     /// The error type.
     error_type: []const u8,
 
-    pub fn parse(allocator: Allocator, json: []const u8) !ErrorResponse {
+    pub fn parse(arena: Allocator, json: []const u8) !ErrorResponse {
         const E = struct { errorMessage: []const u8, errorType: []const u8 };
-        const parsed = std.json.parseFromSliceLeaky(E, allocator, json, .{
+        const parsed = std.json.parseFromSliceLeaky(E, arena, json, .{
             .allocate = .alloc_if_needed,
         }) catch return error.ParseError;
-
         return ErrorResponse{
             .message = parsed.errorMessage,
             .error_type = parsed.errorType,
@@ -229,14 +213,54 @@ pub const ErrorResponse = struct {
     }
 };
 
+pub const StatusResponse = struct {
+    /// Status information.
+    status: []const u8,
+
+    pub fn parse(arena: Allocator, json: []const u8) !StatusResponse {
+        const S = struct { status: []const u8 };
+        const parsed = std.json.parseFromSliceLeaky(S, arena, json, .{
+            .allocate = .alloc_if_needed,
+        }) catch return error.ParseError;
+        return StatusResponse{ .status = parsed.status };
+    }
+};
+
+const RuntimeStatus = enum(u9) {
+    success = 200,
+    accepted = 202,
+    bad_request = 400,
+    forbidden = 403,
+    payload_too_large = 413,
+    /// Non-recoverable state.
+    /// **runtime should exit promptly.**
+    container_error = 500,
+    _,
+};
+
+const ClientResult = Client.Result(RuntimeStatus);
+
+fn sendRequest(
+    arena: Allocator,
+    client: *Client,
+    method: Client.Method,
+    path: []const u8,
+    options: Client.Options,
+) !ClientResult {
+    return client.send(arena, RuntimeStatus, method, path, options) catch |e| {
+        lambda.log_runtime.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
+        return error.ClientError;
+    };
+}
+
 fn sendError(
     arena: Allocator,
-    fetcher: *Fetcher,
-    url: []const u8,
+    client: *Client,
+    path: []const u8,
     err_type: []const u8,
     err_req: ErrorRequest,
-) Fetcher.Error!Fetcher.Result(RuntimeStatus) {
-    return fetcher.send(RuntimeStatus, .POST, url, .{
+) !ClientResult {
+    return client.send(arena, RuntimeStatus, .POST, path, .{
         .request = .{
             .content_type = .{ .override = ERROR_CONTENT_TYPE },
         },
@@ -244,5 +268,8 @@ fn sendError(
             .{ .name = ERROR_HEAD_TYPE, .value = err_type },
         },
         .payload = try std.json.stringifyAlloc(arena, err_req, .{}),
-    });
+    }) catch |e| {
+        lambda.log_runtime.err("[Send Error] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
+        return error.ClientError;
+    };
 }

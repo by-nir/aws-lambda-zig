@@ -1,6 +1,6 @@
 const std = @import("std");
 const lambda = @import("lambda.zig");
-const Fetcher = @import("Fetcher.zig");
+const Client = @import("Client.zig");
 const Runtime = @import("Runtime.zig");
 
 const handlerFn = *const fn (
@@ -31,7 +31,7 @@ fn serve(processor: Runtime.processorFn) void {
 }
 
 pub fn serveBuffer(comptime handler: handlerFn) void {
-    const Processor = struct {
+    const Invocation = struct {
         fn process(rt: *Runtime, payload: []const u8) bool {
             if (handler(rt.allocs, &rt.context, payload)) |output| {
                 rt.respondSuccess(output) catch return false;
@@ -42,5 +42,5 @@ pub fn serveBuffer(comptime handler: handlerFn) void {
         }
     };
 
-    serve(Processor.process);
+    serve(Invocation.process);
 }

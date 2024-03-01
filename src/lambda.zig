@@ -29,8 +29,8 @@ pub const Context = struct {
     /// Environment variables; user-provided and [function meta](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html#configuration-envvars-runtime).
     env: *const std.process.EnvMap,
 
-    /// Host and port of the [runtime API](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html).
-    api_host: []const u8 = undefined,
+    /// URL host and port of the [Runtime API](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html)’s.
+    api_origin: []const u8 = undefined,
 
     /// AWS Region where the Lambda function is executed.
     aws_region: []const u8 = DEFAULT_REGION,
@@ -99,10 +99,15 @@ pub const Context = struct {
 
         var self = Context{ .env = env };
 
+        var has_origin = false;
         if (env.get("AWS_LAMBDA_RUNTIME_API")) |v| {
-            self.api_host = v;
-        } else {
-            return error.MissingRuntimeHost;
+            if (v.len > 0) {
+                has_origin = true;
+                self.api_origin = v;
+            }
+        }
+        if (!has_origin) {
+            return error.MissingRuntimeOrigin;
         }
 
         if (env.get("AWS_REGION")) |v| {

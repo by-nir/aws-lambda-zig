@@ -17,7 +17,7 @@ pub const serve = server.serveBuffer;
 
 test {
     _ = @import("api_runtime.zig");
-    _ = @import("Fetcher.zig");
+    _ = @import("Client.zig");
     _ = @import("Runtime.zig");
     _ = lambda;
     _ = server;
