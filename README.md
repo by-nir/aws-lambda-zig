@@ -12,12 +12,12 @@ Write AWS Lambda functions in Zig.
 ### Benchmark
 Using zig allows creating small and fast functions.
 
-Running a basic _Echo_ demo on _arm64 (512 MB)_:
-- Cold init duration: ~10ms
+Running a basic _Echo_ demo on _arm64 (256 MB)_:
+- Cold-start duration: ~11ms
 - Invocation duration: ~1.5ms
-- Max memory: 14 MB
+- Max memory: 11 MB
 - Function size: 1.7 MB
-- Executable size: 8.1 MB
+- Executable size: 7.8 MB
 
 Usage
 -----

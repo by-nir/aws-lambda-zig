@@ -10,6 +10,7 @@ pub const HeaderIterator = http.HeaderIterator;
 const lambda = @import("lambda.zig");
 
 const MAX_HEADERS_SIZE = 16 * 1024;
+const USER_AGENT = "aws-lambda-zig/" ++ @import("builtin").zig_version_string;
 
 const Self = @This();
 pub const Error = error{FetchError} || std.mem.Allocator.Error;
@@ -39,10 +40,11 @@ pub fn Result(comptime Status: type) type {
 
 pub const Options = struct {
     request: RequestHeaders = .{
-        .user_agent = .{ .override = "aws-lambda-zig/" ++ @import("builtin").zig_version_string },
+        .user_agent = .{ .override = USER_AGENT },
     },
     headers: ?[]const Header = null,
     payload: ?[]const u8 = null,
+    keep_alive: bool = false,
 };
 
 pub fn send(
@@ -53,13 +55,20 @@ pub fn send(
     options: Options,
 ) Error!Result(Status) {
     const headers_buffer = try self.body.allocator.alloc(u8, MAX_HEADERS_SIZE);
+
+    var headers = options.request;
+    if (headers.user_agent == .default) {
+        headers.user_agent = .{ .override = USER_AGENT };
+    }
+
     const result = self.client.fetch(.{
         // Request
         .method = method,
         .location = .{ .url = url },
-        .headers = options.request,
+        .headers = headers,
         .extra_headers = options.headers orelse &.{},
         .payload = options.payload,
+        .keep_alive = options.keep_alive,
 
         // Response
         .server_header_buffer = headers_buffer,
