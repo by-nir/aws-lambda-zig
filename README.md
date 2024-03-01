@@ -6,7 +6,8 @@ Write AWS Lambda functions in Zig.
 - [ ] Extensions API
 - [ ] Telemetry API
 - [x] CloudWatch & X-Ray integration
-- [ ] Response Streaming
+- [ ] Response streaming
+- [ ] Life-cycle hooks
 - [ ] Layers
 
 ### Benchmark

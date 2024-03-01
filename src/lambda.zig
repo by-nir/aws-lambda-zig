@@ -11,13 +11,6 @@ pub const Allocators = struct {
     arena: std.mem.Allocator,
 };
 
-pub const handlerFn = *const fn (
-    allocs: Allocators,
-    context: *const Context,
-    /// The event’s JSON payload
-    event: []const u8,
-) anyerror![]const u8;
-
 pub const Context = struct {
     const DEFAULT_REGION: []const u8 = "us-east-1";
     const DEFAULT_MEMORY_MB: u16 = 128;

@@ -3,29 +3,33 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Fetcher = @import("Fetcher.zig");
 
+const ERROR_HEAD_TYPE = "Lambda-Runtime-Function-Error-Type";
+const ERROR_CONTENT_TYPE = "application/vnd.aws.lambda.error+json";
+
 const API_VERSION = "2018-06-01";
-const FMT_INIT_FAIL: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/init/error";
-const FMT_INVOC_NEXT: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/next";
-const FMT_INVOC_SUCCESS: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/{s}/response";
-const FMT_INVOC_FAIL: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/{s}/error";
-
-pub fn urlInitFail(allocator: Allocator, host: []const u8) std.fmt.AllocPrintError![]const u8 {
-    return std.fmt.allocPrint(allocator, FMT_INIT_FAIL, .{host});
-}
-
-pub fn urlInvocationNext(gpa: Allocator, host: []const u8) std.fmt.AllocPrintError![]const u8 {
-    return std.fmt.allocPrint(gpa, FMT_INVOC_NEXT, .{host});
-}
-
-pub fn urlInvocationSuccess(arena: Allocator, host: []const u8, request_id: []const u8) std.fmt.AllocPrintError![]const u8 {
-    return std.fmt.allocPrint(arena, FMT_INVOC_SUCCESS, .{ host, request_id });
-}
-
-pub fn urlInvocationFail(arena: Allocator, host: []const u8, request_id: []const u8) std.fmt.AllocPrintError![]const u8 {
-    return std.fmt.allocPrint(arena, FMT_INVOC_FAIL, .{ host, request_id });
-}
+pub const URL_INIT_FAIL: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/init/error";
+pub const URL_INVOC_NEXT: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/next";
+pub const URL_INVOC_SUCCESS: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/{s}/response";
+pub const URL_INVOC_FAIL: []const u8 = "http://{s}/" ++ API_VERSION ++ "/runtime/invocation/{s}/error";
 
 pub const SendFetchError = error{ ParseError, ContainerError, UnknownStatus } || Fetcher.Error;
+
+const RuntimeStatus = enum(u9) {
+    success = 200,
+    accepted = 202,
+    bad_request = 400,
+    forbidden = 403,
+    payload_too_large = 413,
+    /// Non-recoverable state.
+    /// **runtime should exit promptly.**
+    container_error = 500,
+    _,
+};
+
+pub const StatusResponse = struct {
+    /// Status information.
+    status: []const u8,
+};
 
 pub const InitFailResult = union(enum) {
     accepted: StatusResponse,
@@ -40,10 +44,12 @@ pub fn sendInitFail(
     allocator: Allocator,
     fetcher: *Fetcher,
     url: []const u8,
-    error_type: ?[]const u8,
-    error_body: ?ErrorRequest,
+    err: anyerror,
+    message: []const u8,
+    trace: ?ErrorTrace,
 ) SendFetchError!InitFailResult {
-    const fetch = try fetchError(allocator, fetcher, url, error_type, error_body);
+    const req = ErrorRequest.from(allocator, "Runtime", err, message, trace);
+    const fetch = try sendError(allocator, fetcher, url, @errorName(err), req);
     return switch (fetch.status) {
         .accepted => .{ .accepted = StatusResponse{ .status = fetch.body } },
         .forbidden => .{ .forbidden = try ErrorResponse.parse(allocator, fetch.body) },
@@ -172,10 +178,12 @@ pub fn sendInvocationFail(
     arena: Allocator,
     fetcher: *Fetcher,
     url: []const u8,
-    error_type: ?[]const u8,
-    error_body: ?ErrorRequest,
+    err: anyerror,
+    message: []const u8,
+    trace: ?ErrorTrace,
 ) SendFetchError!InvocationFailResult {
-    const fetch = try fetchError(arena, fetcher, url, error_type, error_body);
+    const req = ErrorRequest.from(arena, "Handler", err, message, trace);
+    const fetch = try sendError(arena, fetcher, url, @errorName(err), req);
     return switch (fetch.status) {
         .accepted => .{ .accepted = StatusResponse{ .status = fetch.body } },
         .bad_request => .{ .bad_request = try ErrorResponse.parse(arena, fetch.body) },
@@ -185,38 +193,21 @@ pub fn sendInvocationFail(
     };
 }
 
-const RuntimeStatus = enum(u9) {
-    success = 200,
-    accepted = 202,
-
-    bad_request = 400,
-    forbidden = 403,
-    payload_too_large = 413,
-
-    /// Non-recoverable state. **runtime should exit promptly.**
-    container_error = 500,
-
-    _,
-};
-
-pub const StatusResponse = struct {
-    /// Status information.
-    status: []const u8,
-};
-
-pub const ErrorRequest = struct {
-    /// The textual description.
+pub const ErrorTrace = []const []const u8;
+const ErrorRequest = struct {
     message: []const u8,
-
-    /// The semantic type.
     error_type: []const u8,
+    stack_trace: []const []const u8,
 
-    /// The stack trace.
-    stack_trace: []const []const u8 = &[_][]const u8{},
+    pub fn from(allocator: std.mem.Allocator, comptime cat: []const u8, err: anyerror, message: []const u8, trace: ?ErrorTrace) ErrorRequest {
+        const err_type = std.fmt.allocPrint(allocator, cat ++ ".{s}", .{@errorName(err)}) catch @errorName(err);
+        return .{
+            .message = message,
+            .error_type = err_type,
+            .stack_trace = trace orelse &[_][]const u8{},
+        };
+    }
 };
-
-const ERROR_HEAD_TYPE = "Lambda-Runtime-Function-Error-Type";
-const ERROR_CONTENT_TYPE = "application/vnd.aws.lambda.error+json";
 
 pub const ErrorResponse = struct {
     /// The error message.
@@ -238,27 +229,20 @@ pub const ErrorResponse = struct {
     }
 };
 
-fn fetchError(
+fn sendError(
     arena: Allocator,
     fetcher: *Fetcher,
     url: []const u8,
-    error_type: ?[]const u8,
-    error_request: ?ErrorRequest,
+    err_type: []const u8,
+    err_req: ErrorRequest,
 ) Fetcher.Error!Fetcher.Result(RuntimeStatus) {
-    const headers: ?[]const Fetcher.Header = if (error_type) |val| &[_]Fetcher.Header{
-        .{ .name = ERROR_HEAD_TYPE, .value = val },
-    } else null;
-
-    const payload: ?[]const u8 = if (error_request) |val|
-        try std.json.stringifyAlloc(arena, val, .{})
-    else
-        null;
-
     return fetcher.send(RuntimeStatus, .POST, url, .{
         .request = .{
             .content_type = .{ .override = ERROR_CONTENT_TYPE },
         },
-        .headers = headers,
-        .payload = payload,
+        .headers = &.{
+            .{ .name = ERROR_HEAD_TYPE, .value = err_type },
+        },
+        .payload = try std.json.stringifyAlloc(arena, err_req, .{}),
     });
 }
