@@ -3,11 +3,7 @@
 const std = @import("std");
 const testing = std.testing;
 const Client = std.http.Client;
-pub const Method = std.http.Method;
-pub const Header = std.http.Header;
-pub const Reader = Client.Request.Reader;
-pub const RequestHeaders = Client.Request.Headers;
-pub const HeaderIterator = std.http.HeaderIterator;
+const Allocator = std.mem.Allocator;
 const lambda = @import("lambda.zig");
 
 const MAX_HEAD_BUFFER = 16 * 1024;
@@ -15,11 +11,16 @@ const MAX_BODY_BUFFER = 2 * 1024 * 1024;
 const USER_AGENT = "aws-lambda-zig/" ++ @import("builtin").zig_version_string;
 
 const Self = @This();
+pub const Header = std.http.Header;
+pub const Request = Client.Request;
+pub const HeaderIterator = std.http.HeaderIterator;
+
+var response_headers: [MAX_HEAD_BUFFER]u8 = undefined;
 
 http: Client,
 uri: std.Uri,
 
-pub fn init(gpa: std.mem.Allocator, origin: []const u8) !Self {
+pub fn init(gpa: Allocator, origin: []const u8) !Self {
     const idx = std.mem.indexOfScalar(u8, origin, ':');
     const uri = std.Uri{
         .path = "",
@@ -42,63 +43,70 @@ pub fn deinit(self: *Self) void {
     self.* = undefined;
 }
 
-pub fn Result(comptime Status: type) type {
-    return struct {
-        status: Status,
-        headers: HeaderIterator,
-        body: []const u8,
-    };
-}
-
 pub const Options = struct {
-    request: RequestHeaders = .{
-        .user_agent = .{ .override = USER_AGENT },
-    },
     headers: ?[]const Header = null,
-    payload: ?[]const u8 = null,
-    keep_alive: bool = false,
-    chunked: bool = false,
+    request: Request.Headers = .{},
 };
 
-pub fn send(self: *Self, arena: std.mem.Allocator, comptime Status: type, method: Method, path: []const u8, options: Options) !Result(Status) {
-    var uri = self.uri;
-    uri.path = path;
+pub const Result = struct {
+    status: std.http.Status,
+    headers: HeaderIterator,
+    body: []const u8,
+};
 
-    var server_header_buffer: [MAX_HEAD_BUFFER]u8 = undefined;
-
-    var headers = options.request;
-    if (headers.user_agent == .default) {
-        headers.user_agent = .{ .override = USER_AGENT };
-    }
-
+// Based on std.Http.Client.fetch
+pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u8, options: Options) !Result {
+    const uri = self.uriFor(path);
+    const headers = prepareHeaders(options.request);
+    const method: std.http.Method = if (payload == null) .GET else .POST;
     var req = try self.http.open(method, uri, .{
-        .keep_alive = options.keep_alive,
+        .keep_alive = false,
         .redirect_behavior = .not_allowed,
+        .server_header_buffer = &response_headers,
         .headers = headers,
         .extra_headers = options.headers orelse &.{},
-        .server_header_buffer = &server_header_buffer,
     });
     defer req.deinit();
 
-    if (options.payload) |payload| {
-        req.transfer_encoding = if (options.chunked)
-            .chunked
-        else
-            .{ .content_length = payload.len };
+    if (payload) |p| {
+        req.transfer_encoding = .{ .content_length = p.len };
     }
-
     try req.send(.{});
 
-    if (options.payload) |payload| {
-        try req.writeAll(payload);
+    if (payload) |p| {
+        try req.writeAll(p);
     }
 
     try req.finish();
+    return respond(&req, arena);
+}
+
+fn uriFor(self: *Self, path: []const u8) std.Uri {
+    var uri = self.uri;
+    uri.path = path;
+    return uri;
+}
+
+fn prepareHeaders(request: Request.Headers) Request.Headers {
+    var headers = request;
+    if (headers.user_agent == .default) {
+        headers.user_agent = .{ .override = USER_AGENT };
+    }
+    return headers;
+}
+
+fn respond(req: *Client.Request, arena: Allocator) !Result {
     try req.wait();
 
-    return Result(Status){
-        .status = @enumFromInt(@intFromEnum(req.response.status)),
-        .headers = HeaderIterator.init(&server_header_buffer),
-        .body = try req.reader().readAllAlloc(arena, MAX_BODY_BUFFER),
+    var body: []const u8 = &.{};
+    const content_length = req.response.content_length;
+    if (content_length != null and content_length.? > 0) {
+        body = try req.reader().readAllAlloc(arena, MAX_BODY_BUFFER);
+    }
+
+    return Result{
+        .status = req.response.status,
+        .headers = HeaderIterator.init(&response_headers),
+        .body = body,
     };
 }

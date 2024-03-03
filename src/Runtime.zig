@@ -4,8 +4,6 @@ const Client = @import("Client.zig");
 const api = @import("api_runtime.zig");
 
 const Self = @This();
-
-const FMT_ERROR = "[{s}] Interpreting URL failed: {s}";
 pub const processorFn = *const fn (runtime: *Self, payload: []const u8) bool;
 
 allocs: lambda.Allocators,
@@ -39,7 +37,10 @@ pub fn deinit(self: *Self) void {
 fn initFailed(arena: std.mem.Allocator, client: ?*Client, err: anyerror, message: []const u8) void {
     lambda.log_runtime.err("[Init] {s}: {s}", .{ message, @errorName(err) });
     if (client) |c| {
-        const result = api.sendInitFail(arena, c, err, message, null) catch |e| {
+        const result = api.sendInitFail(arena, c, .{
+            .typing = err,
+            .message = message,
+        }) catch |e| {
             lambda.log_runtime.err(
                 "[Init Failed] Sending the initialization’s error report failed: {s}",
                 .{@errorName(e)},
@@ -103,11 +104,7 @@ pub fn eventLoop(self: *Self, arena: *std.heap.ArenaAllocator, processor: proces
 }
 
 pub fn respondSuccess(self: *Self, output: []const u8) !void {
-    const path = std.fmt.allocPrint(self.allocs.arena, api.URL_INVOC_SUCCESS, .{self.context.request_id}) catch |e| {
-        lambda.log_runtime.err(FMT_ERROR, .{ "Invocation Success", @errorName(e) });
-        return e;
-    };
-    const result = api.sendInvocationSuccess(self.allocs.arena, &self.client, path, output) catch |e| {
+    const result = api.sendInvocationSuccess(self.allocs.arena, &self.client, self.context.request_id, output) catch |e| {
         lambda.log_runtime.err(
             "[Respond Success] Sending the invocation’s output failed: {s}",
             .{@errorName(e)},
@@ -133,11 +130,10 @@ pub fn respondFailure(self: *Self, err: anyerror, trace: ?*std.builtin.StackTrac
         lambda.log_runtime.err(log, .{@errorName(err)});
     }
 
-    const path = std.fmt.allocPrint(self.allocs.arena, api.URL_INVOC_FAIL, .{self.context.request_id}) catch |e| {
-        lambda.log_runtime.err(FMT_ERROR, .{ "Invocation Fail", @errorName(e) });
-        return e;
-    };
-    const result = api.sendInvocationFail(self.allocs.arena, &self.client, path, err, "The handler returned an error response.", null) catch |e| {
+    const result = api.sendInvocationFail(self.allocs.arena, &self.client, self.context.request_id, .{
+        .typing = err,
+        .message = "The handler returned an error response.",
+    }) catch |e| {
         lambda.log_runtime.err(
             "[Respond Failure] Sending the invocation’s error report failed: {s}",
             .{@errorName(e)},
