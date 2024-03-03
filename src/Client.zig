@@ -8,7 +8,7 @@ const lambda = @import("lambda.zig");
 
 const MAX_HEAD_BUFFER = 16 * 1024;
 const MAX_BODY_BUFFER = 2 * 1024 * 1024;
-const USER_AGENT = "aws-lambda-zig/" ++ @import("builtin").zig_version_string;
+const USER_AGENT = "aws-lambda-zig/ (zig@" ++ @import("builtin").zig_version_string ++ ")";
 
 const Self = @This();
 pub const Header = std.http.Header;
@@ -44,8 +44,8 @@ pub fn deinit(self: *Self) void {
 }
 
 pub const Options = struct {
-    headers: ?[]const Header = null,
     request: Request.Headers = .{},
+    headers: ?[]const Header = null,
 };
 
 pub const Result = struct {
@@ -54,16 +54,66 @@ pub const Result = struct {
     body: []const u8,
 };
 
+pub fn streamOpen(self: *Self, path: []const u8, options: Options) !Client.Request {
+    const uri = self.uriFor(path);
+    var req = try self.http.open(.POST, uri, .{
+        .keep_alive = false,
+        .redirect_behavior = .not_allowed,
+        .server_header_buffer = &response_headers,
+        .headers = prepareHeaders(options.request),
+        .extra_headers = options.headers orelse &.{},
+    });
+    errdefer req.deinit();
+
+    req.transfer_encoding = .chunked;
+    try req.send(.{});
+
+    return req;
+}
+
+pub fn streamAppend(req: *Client.Request, payload: []const u8) !void {
+    try req.writer().writeAll(payload);
+    try req.connection.?.flush();
+}
+
+pub fn streamClose(arena: Allocator, req: *Client.Request, trailer: ?[]const Header) !Result {
+    const client = req.client;
+    const connection = req.connection.?;
+    defer {
+        connection.closing = true;
+        client.connection_pool.release(client.allocator, connection);
+    }
+
+    if (trailer) |t| blk: {
+        if (t.len == 0) break :blk try req.finish();
+
+        var w = connection.writer();
+        try w.writeAll("0\r\n");
+        for (req.extra_headers) |header| {
+            std.debug.assert(header.name.len != 0);
+            try w.writeAll(header.name);
+            try w.writeAll(": ");
+            try w.writeAll(header.value);
+            try w.writeAll("\r\n");
+        }
+        try w.writeAll("\r\n");
+        try connection.flush();
+    } else {
+        try req.finish();
+    }
+
+    return respond(req, arena);
+}
+
 // Based on std.Http.Client.fetch
 pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u8, options: Options) !Result {
     const uri = self.uriFor(path);
-    const headers = prepareHeaders(options.request);
     const method: std.http.Method = if (payload == null) .GET else .POST;
     var req = try self.http.open(method, uri, .{
         .keep_alive = false,
         .redirect_behavior = .not_allowed,
         .server_header_buffer = &response_headers,
-        .headers = headers,
+        .headers = prepareHeaders(options.request),
         .extra_headers = options.headers orelse &.{},
     });
     defer req.deinit();

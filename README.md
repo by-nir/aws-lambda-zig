@@ -6,7 +6,7 @@ Write AWS Lambda functions in Zig.
 - [ ] Extensions API
 - [ ] Telemetry API
 - [x] CloudWatch & X-Ray integration
-- [ ] Response streaming
+- [x] Response streaming
 - [ ] Life-cycle hooks
 - [ ] Layers
 
@@ -90,6 +90,24 @@ Returns an output larger than the Lambda limit; the runtime logs an error to _Cl
 
 ```zig
 zig build demo:oversize --release
+```
+
+### Response Streaming
+Stream a response to the client.
+
+👉 _Be sure to configure the function with streaming enabled._
+
+```zig
+zig build demo:stream --release
+```
+
+### Response Streaming: Fail
+Stream a response to the client and eventually fail.
+
+👉 _Be sure to configure the function with streaming enabled._
+
+```zig
+zig build demo:stream_throw --release
 ```
 
 ## Acknowledgment

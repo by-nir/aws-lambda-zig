@@ -12,7 +12,11 @@ const URL_INVOC_FAIL: []const u8 = URL_BASE ++ "invocation/{s}/error";
 const URL_ERROR = "[{s}] Interpreting URL failed: {s}";
 
 const ERROR_HEAD_TYPE = "Lambda-Runtime-Function-Error-Type";
+const ERROR_HEAD_BODY = "Lambda-Runtime-Function-Error-Body";
 const ERROR_CONTENT_TYPE = "application/vnd.aws.lambda.error+json";
+
+const STREAM_HEAD_NAME = "Lambda-Runtime-Function-Response-Mode";
+const STREAM_HEAD_VAL = "streaming";
 
 pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus } || Allocator.Error;
 
@@ -67,6 +71,68 @@ pub fn sendInvocationSuccess(
     return InvocationSuccessResult.init(arena, &result);
 }
 
+/// Runtime makes this request in order to stream a response.
+pub fn streamInvocationOpen(
+    arena: Allocator,
+    client: *Client,
+    req_id: []const u8,
+    content_type: []const u8,
+) Error!Client.Request {
+    const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Success");
+    return client.streamOpen(path, .{
+        .request = .{
+            .content_type = .{ .override = content_type },
+        },
+        .headers = &[_]Client.Header{
+            .{ .name = STREAM_HEAD_NAME, .value = STREAM_HEAD_VAL },
+            .{ .name = "Trailer", .value = ERROR_HEAD_TYPE ++ ", " ++ ERROR_HEAD_BODY },
+        },
+    }) catch |e| {
+        lambda.log_runtime.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
+        return error.ClientError;
+    };
+}
+
+/// Write to the stream.
+pub fn streamInvocationAppend(req: *Client.Request, payload: []const u8) Error!void {
+    Client.streamAppend(req, payload) catch |e| {
+        lambda.log_runtime.err("[Stream Request] Client failed appending: {s}", .{@errorName(e)});
+        return error.ClientError;
+    };
+}
+
+/// Close the stream.
+///
+/// Trailer headers are optional.
+pub fn streamInvocationClose(
+    req: *Client.Request,
+    arena: Allocator,
+    err_req: ?ErrorRequest,
+) Error!InvocationSuccessResult {
+    const trailer: ?[]const Client.Header = if (err_req) |err| blk: {
+        const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.typing)}) catch |e| {
+            lambda.log_runtime.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
+            return e;
+        };
+        const size = std.base64.standard.Encoder.calcSize(err.message.len);
+        const body = arena.alloc(u8, size) catch |e| {
+            lambda.log_runtime.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
+            return e;
+        };
+        _ = std.base64.standard.Encoder.encode(body, err.message);
+        break :blk &[_]Client.Header{
+            .{ .name = ERROR_HEAD_TYPE, .value = err_type },
+            .{ .name = ERROR_HEAD_BODY, .value = body },
+        };
+    } else null;
+
+    var result = Client.streamClose(arena, req, trailer) catch |e| {
+        lambda.log_runtime.err("[Stream Request] Client failed closing: {s}", .{@errorName(e)});
+        return error.ClientError;
+    };
+    return InvocationSuccessResult.init(arena, &result);
+}
+
 /// Runtime makes this request in order to submit an error response. It can be
 /// either a function error, or a runtime error. Error will be served in
 /// response to the invoke.
@@ -81,10 +147,10 @@ pub fn sendInvocationFail(
     return InvocationFailResult.init(arena, result);
 }
 
-fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]const u8) !Client.Result {
-    return client.send(arena, path, payload, .{}) catch |e| {
-        lambda.log_runtime.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
-        return error.ClientError;
+fn requestPath(arena: Allocator, comptime fmt: []const u8, req_id: []const u8, err_phase: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena, fmt, .{req_id}) catch |e| {
+        lambda.log_runtime.err(URL_ERROR, .{ err_phase, @errorName(e) });
+        return e;
     };
 }
 
@@ -119,10 +185,10 @@ fn sendError(
     };
 }
 
-fn requestPath(arena: Allocator, comptime fmt: []const u8, req_id: []const u8, err_phase: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(arena, fmt, .{req_id}) catch |e| {
-        lambda.log_runtime.err(URL_ERROR, .{ err_phase, @errorName(e) });
-        return e;
+fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]const u8) !Client.Result {
+    return client.send(arena, path, payload, .{}) catch |e| {
+        lambda.log_runtime.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
+        return error.ClientError;
     };
 }
 
@@ -273,4 +339,3 @@ const InvocationFailResult = union(enum) {
         };
     }
 };
-
