@@ -17,8 +17,8 @@ Running a basic _Echo_ demo on _arm64 (256 MB)_:
 - Cold-start duration: ~11ms
 - Invocation duration: ~1.5ms
 - Max memory: 11 MB
-- Function size: 1.7 MB
-- Executable size: 7.8 MB
+- Function size: 1.6 MB
+- Executable size: 7.3 MB
 
 Usage
 -----

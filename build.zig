@@ -28,11 +28,13 @@ pub fn build(b: *std.Build) void {
     // Demos
     //
 
-    const demo_target = resolveDemoTarget(b, target);
+    // zig fmt: off
     const demos = .{
-        // zig fmt: off
         "echo", "debug", "fail", "oversize", "stream", "stream_throw",
     };
+    // zig fmt: on
+
+    const demo_target = resolveDemoTarget(b, target);
     inline for (demos) |name| {
         addDemo(b, demo_target, optimize, name, lib);
     }
