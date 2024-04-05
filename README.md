@@ -1,8 +1,12 @@
 # AWS Lambda Runtime for Zig
 ![Zig v0.12 (master)](https://img.shields.io/badge/Zig-v0.12_(master)-black?logo=zig&logoColor=F7A41D)
-[![MIT License](https://img.shields.io/github/license/by-nir/aws-lambda-zig)](https://github.com/by-nir/aws-lambda-zig/LICENSE)
+[![MIT License](https://img.shields.io/github/license/by-nir/aws-lambda-zig)](/LICENSE)
 
 Write _AWS Lambda_ functions in the Zig programming language to achieve blazing fast invocations and cold starts!
+
+> [!TIP]
+> Check out [AWS SDK for Zig](https://github.com/by-nir/aws-sdk-zig) for a
+> comprehensive Zig-based AWS cloud solution.
 
 ### Features
 
