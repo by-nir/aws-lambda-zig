@@ -16,7 +16,6 @@ const LoremIpsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
 fn handler(_: lambda.Allocators, _: *const lambda.Context, _: []const u8, stream: lambda.Channel) !void {
     // Start a plain-text response stream.
     try stream.open("text/event-stream");
-
     try stream.write(LoremIpsum);
     std.time.sleep(WAIT_NS);
 

@@ -1,6 +1,10 @@
 # AWS Lambda Runtime for Zig
+![Zig v0.12 (master)](https://img.shields.io/badge/Zig-v0.12_(master)-black?logo=zig&logoColor=F7A41D)
+[![MIT License](https://img.shields.io/github/license/by-nir/aws-lambda-zig)](https://github.com/by-nir/aws-lambda-zig/LICENSE)
 
-Write AWS Lambda functions in Zig.
+Write _AWS Lambda_ functions in the Zig programming language to achieve blazing fast invocations and cold starts!
+
+### Features
 
 - [x] Runtime API
 - [ ] Extensions API
@@ -9,23 +13,24 @@ Write AWS Lambda functions in Zig.
 - [x] Response streaming
 - [ ] Life-cycle hooks
 - [ ] Layers
+- [ ] Structured events
+- [ ] Managed build step
 
 ### Benchmark
-Using zig allows creating small and fast functions.
 
-Running a basic _Echo_ demo on _arm64 (256 MB)_:
-- Cold-start duration: ~11ms
-- Invocation duration: ~1.5ms
-- Max memory: 11 MB
-- Function size: 1.6 MB
-- Executable size: 7.3 MB
+Using zig allows creating small and fast functions.<br />
+Running the basic [Echo demo](#echo) on _`arm64` (`256 MB`, Amazon Linux 2023)_:
+- ❄️ `~11ms` cold-start duration
+- ⚡ `~1.5ms` invocation duration
+- 💾 `11 MB` max memory consumption
+- ⚖️ `1.7 MB` function size (zip)
 
-Usage
------
+## Usage
 
 ### Setup
+
 1. Add this package as a dependency to your project.
-2. Import the `aws-lambda` module in your `build.zig` script. 
+2. Import the `aws-lambda` module in your `build.zig` script.
 
 ### Minimal Code
 
@@ -59,8 +64,14 @@ fn handler(
 3. Archive the executable into a **zip**.
 4. Upload the archive to Lambda (using _Amazon Linux 2023_ or another **OS-only runtime**). This shouls work through the console, CLI, SAM or anyCI solution.
 
-Demos
------
+## Demos
+
+### Hello World
+Returns a short message.
+
+```zig
+zig build demo:hello --release
+```
 
 ### Echo
 Returns the provided payload.
@@ -110,6 +121,18 @@ Stream a response to the client and eventually fail.
 zig build demo:stream_throw --release
 ```
 
-## Acknowledgment
+
+## License
+
+The author and contributors are not responsible for any issues or damages caused
+by the use of this software, part of it, or its derivatives. See [LICENSE](/LICENSE)
+for the complete terms of use.
+
+> [!NOTE]
+> _AWS Lambda Runtime for Zig_ is not an official _Amazon Web Services_ software, nor
+> is it affiliated with _Amazon Web Services, Inc_.
+
+### Acknowledgments
+
 - https://github.com/softprops/zig-lambda-runtime
 - https://github.com/awslabs/aws-lambda-rust-runtime

@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) void {
 
     // zig fmt: off
     const demos = .{
-        "echo", "debug", "fail", "oversize", "stream", "stream_throw",
+        "hello", "echo", "debug", "fail", "oversize", "stream", "stream_throw",
     };
     // zig fmt: on
 
