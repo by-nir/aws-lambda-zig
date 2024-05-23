@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const lib = b.addModule("aws-lambda", .{
-        .root_source_file = .{ .path = "src/root.zig" },
+        .root_source_file = b.path("src/root.zig"),
     });
 
     //
@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     //
 
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/root.zig" },
+        .root_source_file = b.path("src/root.zig"),
         .target = b.resolveTargetQuery(target),
         .optimize = optimize,
     });
@@ -64,7 +64,7 @@ fn addDemo(
         .name = "bootstrap",
         .target = target,
         .optimize = optimize,
-        .root_source_file = .{ .path = "demo/" ++ name ++ ".zig" },
+        .root_source_file = b.path("demo/" ++ name ++ ".zig"),
     });
     exe.root_module.addImport("aws-lambda", lib);
 
