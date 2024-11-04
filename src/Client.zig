@@ -23,9 +23,9 @@ uri: std.Uri,
 pub fn init(gpa: Allocator, origin: []const u8) !Self {
     const idx = std.mem.indexOfScalar(u8, origin, ':');
     const uri = std.Uri{
-        .path = "",
+        .path = .{ .percent_encoded = "" },
         .scheme = "http",
-        .host = if (idx) |i| origin[0..i] else origin,
+        .host = .{ .raw = if (idx) |i| origin[0..i] else origin },
         .port = if (idx) |i|
             try std.fmt.parseUnsigned(u16, origin[i + 1 .. origin.len], 10)
         else
@@ -66,7 +66,7 @@ pub fn streamOpen(self: *Self, path: []const u8, options: Options) !Client.Reque
     errdefer req.deinit();
 
     req.transfer_encoding = .chunked;
-    try req.send(.{});
+    try req.send();
 
     return req;
 }
@@ -121,7 +121,7 @@ pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u
     if (payload) |p| {
         req.transfer_encoding = .{ .content_length = p.len };
     }
-    try req.send(.{});
+    try req.send();
 
     if (payload) |p| {
         try req.writeAll(p);
@@ -133,7 +133,7 @@ pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u
 
 fn uriFor(self: *Self, path: []const u8) std.Uri {
     var uri = self.uri;
-    uri.path = path;
+    uri.path = .{ .raw = path };
     return uri;
 }
 
