@@ -1,17 +1,23 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const lambda = @import("lambda.zig");
-const Client = @import("Client.zig");
 const api = @import("api_runtime.zig");
+const HttpClient = @import("Http.zig");
 
 const Self = @This();
 
-/// Return `true` when the runtime can process another event, `false` when it should terminate.
-pub const processorFn = *const fn (runtime: *Self, payload: []const u8) bool;
+pub const processorFn = *const fn (runtime: *Self, payload: []const u8) InvocationResult;
+
+pub const InvocationResult = enum {
+    /// The runtime may process another event.
+    success,
+    /// The runtime should terminate the lambda instance.
+    abort,
+};
 
 allocs: lambda.Allocators,
 context: lambda.Context,
-client: Client,
+client: HttpClient,
 
 pub fn init(allocs: lambda.Allocators) !Self {
     var context = lambda.Context.init(allocs.gpa) catch |e| {
@@ -20,7 +26,7 @@ pub fn init(allocs: lambda.Allocators) !Self {
     };
     errdefer context.deinit(allocs.gpa);
 
-    const client = Client.init(allocs.gpa, context.api_origin) catch |e| {
+    const client = HttpClient.init(allocs.gpa, context.api_origin) catch |e| {
         initFailed(allocs.arena, null, e, "Creating a client failed");
         return e;
     };
@@ -37,11 +43,11 @@ pub fn deinit(self: *Self) void {
     self.context.deinit(self.allocs.gpa);
 }
 
-fn initFailed(arena: Allocator, client: ?*Client, err: anyerror, message: []const u8) void {
+fn initFailed(arena: Allocator, client: ?*HttpClient, err: anyerror, message: []const u8) void {
     lambda.log_runtime.err("[Init] {s}: {s}", .{ message, @errorName(err) });
     if (client) |c| {
         const result = api.sendInitFail(arena, c, .{
-            .typing = err,
+            .err_type = err,
             .message = message,
         }) catch |e| {
             lambda.log_runtime.err(
@@ -73,6 +79,7 @@ pub fn eventLoop(self: *Self, arena: *std.heap.ArenaAllocator, processor: proces
             );
             return;
         };
+
         // Handle the event
         switch (next) {
             // Failed retrieving the event
@@ -95,9 +102,7 @@ pub fn eventLoop(self: *Self, arena: *std.heap.ArenaAllocator, processor: proces
                 ctx.xray_trace = event.xray_trace;
                 defer ctx.xray_trace = &[_]u8{};
 
-                if (!processor(self, event.payload)) {
-                    return;
-                }
+                if (processor(self, event.payload) == .abort) return;
             },
         }
 
@@ -115,7 +120,7 @@ pub fn respondFailure(self: *Self, err: anyerror, trace: ?*std.builtin.StackTrac
     }
 
     const result = api.sendInvocationFail(self.allocs.arena, &self.client, self.context.request_id, .{
-        .typing = err,
+        .err_type = err,
         .message = "The handler returned an error response.",
     }) catch |e| {
         lambda.log_runtime.err(
@@ -124,6 +129,7 @@ pub fn respondFailure(self: *Self, err: anyerror, trace: ?*std.builtin.StackTrac
         );
         return e;
     };
+
     switch (result) {
         .accepted => {},
         .bad_request, .forbidden => |e| {
@@ -143,11 +149,12 @@ pub fn respondSuccess(self: *Self, output: []const u8) !void {
         );
         return e;
     };
+
     switch (result) {
         .accepted => {},
         .bad_request, .forbidden, .payload_too_large => |e| {
             lambda.log_runtime.err(
-                "[Respond Success] Sending the invocation’s response failed: {s}.\n{s}",
+                "[Respond Success] Sending the invocation response failed: {s}.\n{s}",
                 .{ e.error_type, e.message },
             );
         },
@@ -157,11 +164,12 @@ pub fn respondSuccess(self: *Self, output: []const u8) !void {
 pub fn streamSuccess(self: *Self, content_type: []const u8) !Stream {
     const request = api.streamInvocationOpen(self.allocs.arena, &self.client, self.context.request_id, content_type) catch |e| {
         lambda.log_runtime.err(
-            "[Stream Success] Opening the invocation’s stream failed: {s}",
+            "[Stream Invocation] Opening a stream failed: {s}",
             .{@errorName(e)},
         );
         return e;
     };
+
     return Stream{
         .req = request,
         .arena = self.allocs.arena,
@@ -169,32 +177,50 @@ pub fn streamSuccess(self: *Self, content_type: []const u8) !Stream {
 }
 
 pub const Stream = struct {
-    req: Client.Request,
+    req: HttpClient.Request,
     arena: std.mem.Allocator,
 
-    pub fn append(self: *Stream, payload: []const u8) !void {
-        api.streamInvocationAppend(&self.req, payload) catch |e| {
-            lambda.log_runtime.err(
-                "[Stream Success] Appending to the invocation’s stream failed: {s}",
-                .{@errorName(e)},
-            );
-            return e;
+    pub fn write(self: *Stream, payload: []const u8) !void {
+        const writer = self.req.writer();
+        writer.writeAll(payload) catch |err| {
+            const name = @errorName(err);
+            lambda.log_runtime.err("[Stream Invocation] Writing to the stream’s buffer failed: {s}", .{name});
+            return err;
+        };
+    }
+
+    pub fn writeFmt(self: *Stream, comptime format: []const u8, args: anytype) !void {
+        const writer = self.req.writer();
+        writer.print(format, args) catch |err| {
+            const name = @errorName(err);
+            lambda.log_runtime.err("[Stream Invocation] Writing to the stream’s buffer failed: {s}", .{name});
+            return err;
+        };
+    }
+
+    pub fn flush(self: *Stream) !void {
+        const conn = self.req.connection.?;
+        conn.flush() catch |err| {
+            const name = @errorName(err);
+            lambda.log_runtime.err("[Stream Invocation] Flushin the stream’s buffer failed: {s}", .{name});
+            return err;
         };
     }
 
     pub fn close(self: *Stream, err: ?api.ErrorRequest) !void {
         const result = api.streamInvocationClose(&self.req, self.arena, err) catch |e| {
             lambda.log_runtime.err(
-                "[Stream Success] Closing the invocation’s stream failed: {s}",
+                "[Stream Invocation] Closing the stream failed: {s}",
                 .{@errorName(e)},
             );
             return e;
         };
+
         switch (result) {
             .accepted => {},
             .bad_request, .forbidden, .payload_too_large => |e| {
                 lambda.log_runtime.err(
-                    "[Stream Success] Closing the invocation’s stream failed: {s}.\n{s}",
+                    "[Stream Invocation] Closing the stream failed: {s}.\n{s}",
                     .{ e.error_type, e.message },
                 );
             },

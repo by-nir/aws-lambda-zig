@@ -1,22 +1,20 @@
 const std = @import("std");
 const lambda = @import("lambda.zig");
-const Client = @import("Client.zig");
 const Runtime = @import("Runtime.zig");
-const Channel = @import("Channel.zig");
 
-const handlerFn = *const fn (
+const HandlerFn = *const fn (
     allocs: lambda.Allocators,
     context: *const lambda.Context,
     /// The event’s JSON payload
     event: []const u8,
 ) anyerror![]const u8;
 
-const handlerStreamFn = *const fn (
+const StreamHandlerFn = *const fn (
     allocs: lambda.Allocators,
     context: *const lambda.Context,
     /// The event’s JSON payload
     event: []const u8,
-    stream: Channel,
+    stream: Stream,
 ) anyerror!void;
 
 fn serve(processor: Runtime.processorFn) void {
@@ -38,109 +36,172 @@ fn serve(processor: Runtime.processorFn) void {
     runtime.eventLoop(&arena, processor);
 }
 
-pub fn serveBuffer(comptime handler: handlerFn) void {
-    const Invocation = struct {
-        fn process(rt: *Runtime, payload: []const u8) bool {
+/// The entry point for an AWS Lambda function.
+///
+/// Accepts a const reference to a handler function that will process each event separetly.
+pub fn serveBuffered(comptime handler: HandlerFn) void {
+    serve(struct {
+        fn f(rt: *Runtime, payload: []const u8) Runtime.InvocationResult {
             if (handler(rt.allocs, &rt.context, payload)) |output| {
-                rt.respondSuccess(output) catch return false;
+                rt.respondSuccess(output) catch return .abort;
             } else |e| {
-                rt.respondFailure(e, @errorReturnTrace()) catch return false;
+                rt.respondFailure(e, @errorReturnTrace()) catch return .abort;
             }
-            return true;
-        }
-    };
 
-    serve(Invocation.process);
+            return .success;
+        }
+    }.f);
 }
 
-pub fn serveStream(comptime handler: handlerStreamFn) void {
-    const Invocation = struct {
-        const Self = @This();
-        const State = enum { pending, active, end };
+/// The entry point for a streaming AWS Lambda function.
+///
+/// Accepts a const reference to a streaming handler function that will process each event separetly.
+pub fn serveStreaming(comptime handler: StreamHandlerFn) void {
+    serve(struct {
+        fn f(runtime: *Runtime, payload: []const u8) Runtime.InvocationResult {
+            var context: StreamingContext = .{};
+            var stream: Runtime.Stream = undefined;
 
-        var state: State = .pending;
-        var stream: Runtime.Stream = undefined;
-        var runtime_error: bool = false;
-
-        fn process(rt: *Runtime, payload: []const u8) bool {
-            state = .pending;
-            stream = undefined;
-            runtime_error = false;
-
-            const channel = Channel{
-                .ctx = rt,
-                .vtable = &ChannelVT,
-            };
-
-            const allocs = rt.allocs;
-            handler(allocs, &rt.context, payload, channel) catch |e| {
-                if (state == .pending) {
-                    rt.respondFailure(e, @errorReturnTrace()) catch return false;
-                    return !runtime_error;
+            handler(runtime.allocs, &runtime.context, payload, .{
+                .runtime = runtime,
+                .stream = &stream,
+                .context = &context,
+            }) catch |err| {
+                if (context.state == .pending) {
+                    runtime.respondFailure(err, @errorReturnTrace()) catch return .abort;
+                    return context.invocationResult();
                 }
 
                 lambda.log_runtime.err(
-                    "[Processor] The handler returned an error after opening a stream: {s}",
-                    .{@errorName(e)},
+                    "[Stream Processor] The handler returned an error after opening a stream: {s}",
+                    .{@errorName(err)},
                 );
             };
 
-            switch (state) {
-                .pending => rt.respondFailure(error.NoResponse, null) catch return false,
-                .active => stream.close(null) catch return false,
+            switch (context.state) {
+                .pending => runtime.respondFailure(error.NoResponse, null) catch return .abort,
+                .active => stream.close(null) catch return .abort,
                 .end => {},
             }
-            return !runtime_error;
-        }
 
-        const ChannelVT = Channel.VTable{
-            .open = open,
-            .write = write,
-            .close = close,
-            .fail = fail,
+            return context.invocationResult();
+        }
+    }.f);
+}
+
+const StreamingContext = struct {
+    state: State = .pending,
+    fail_source: Source = .none,
+
+    const State = enum { pending, active, end };
+    const Source = enum { none, handler, runtime };
+
+    pub fn invocationResult(self: StreamingContext) Runtime.InvocationResult {
+        return switch (self.fail_source) {
+            .none, .handler => .success,
+            .runtime => .abort,
         };
+    }
+};
 
-        fn getRuntime(ctx: *anyopaque) *Runtime {
-            return @alignCast(@ptrCast(ctx));
-        }
+pub const Stream = struct {
+    runtime: *Runtime,
+    stream: *Runtime.Stream,
+    context: *StreamingContext,
 
-        fn open(ctx: *anyopaque, content_type: []const u8) Channel.Error!void {
-            if (state != .pending or runtime_error) return;
-            std.debug.assert(content_type.len > 0);
-            const rt = getRuntime(ctx);
-            stream = rt.streamSuccess(content_type) catch {
-                runtime_error = true;
-                return error.RuntimeFail;
-            };
-            state = .active;
-        }
-
-        fn write(_: *anyopaque, payload: []const u8) Channel.Error!void {
-            if (state != .active or runtime_error) return error.NotOpen;
-            stream.append(payload) catch {
-                runtime_error = true;
-                return error.RuntimeFail;
-            };
-        }
-
-        fn close(_: *anyopaque) Channel.Error!void {
-            if (state != .active or runtime_error) return error.NotOpen;
-            state = .end;
-            stream.close(null) catch {
-                runtime_error = true;
-                return error.RuntimeFail;
-            };
-        }
-
-        fn fail(_: *anyopaque, err: anyerror, message: []const u8) Channel.Error!void {
-            if (state != .active or runtime_error) return error.NotOpen;
-            state = .end;
-            stream.close(.{ .typing = err, .message = message }) catch {
-                runtime_error = true;
-                return error.RuntimeFail;
-            };
-        }
+    pub const Error = error{
+        ClosedStream,
+        RuntimeFail,
     };
 
-    serve(Invocation.process);
-}
+    /// Start the response stream with a given http content type.
+    ///
+    /// Calling open again after it has already been called is a non-op.
+    pub fn open(self: Stream, content_type: []const u8) Error!void {
+        if (self.context.state != .pending or self.context.fail_source == .runtime) return;
+
+        std.debug.assert(content_type.len > 0);
+        self.stream.* = self.runtime.streamSuccess(content_type) catch return self.runtimeFailiure();
+        self.context.state = .active;
+    }
+
+    /// Append to the stream’s buffer.
+    ///
+    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
+    pub fn write(self: Stream, payload: []const u8) Error!void {
+        if (self.isActive()) {
+            self.stream.write(payload) catch return self.runtimeFailiure();
+        } else {
+            return error.ClosedStream;
+        }
+    }
+
+    /// Append to the stream’s buffer.
+    ///
+    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
+    pub fn writeFmt(self: Stream, comptime format: []const u8, args: anytype) Error!void {
+        if (self.isActive()) {
+            self.stream.writeFmt(format, args) catch return self.runtimeFailiure();
+        } else {
+            return error.ClosedStream;
+        }
+    }
+
+    /// Send the stream’s buffer to the client.
+    ///
+    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
+    pub fn flush(self: Stream) Error!void {
+        if (self.isActive()) {
+            self.stream.flush() catch return self.runtimeFailiure();
+        } else {
+            return error.ClosedStream;
+        }
+    }
+
+    /// Append to the stream’s buffer and send it the client.
+    ///
+    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
+    pub fn publish(self: Stream, payload: []const u8) Error!void {
+        try self.write(payload);
+        try self.flush();
+    }
+
+    /// Append to the stream’s buffer and send it the client.
+    ///
+    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
+    pub fn publishFmt(self: Stream, comptime format: []const u8, args: anytype) Error!void {
+        try self.writeFmt(format, args);
+        try self.flush();
+    }
+
+    /// **Optional**, end the response stream and proceed to do other work in the handler.
+    pub fn close(self: Stream) Error!void {
+        if (!self.isActive()) return error.ClosedStream;
+
+        self.context.state = .end;
+        self.stream.close(null) catch return self.runtimeFailiure();
+    }
+
+    /// End the response stream with a **client-transmitted** error.
+    pub fn closeWithError(self: Stream, err: anyerror, message: []const u8) Error!void {
+        if (!self.isActive()) return error.ClosedStream;
+
+        try self.write(message);
+        self.context.state = .end;
+        self.stream.close(.{
+            .err_type = err,
+            .message = message,
+        }) catch {
+            return self.runtimeFailiure();
+        };
+    }
+
+    fn isActive(self: Stream) bool {
+        return self.context.state == .active and self.context.fail_source != .runtime;
+    }
+
+    fn runtimeFailiure(self: Stream) Error!void {
+        self.context.fail_source = .runtime;
+        return error.RuntimeFail;
+    }
+};

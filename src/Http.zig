@@ -1,5 +1,4 @@
 //! A simple HTTP client shared between the APIs.
-
 const std = @import("std");
 const testing = std.testing;
 const Client = std.http.Client;
@@ -17,7 +16,7 @@ pub const HeaderIterator = std.http.HeaderIterator;
 
 var response_headers: [MAX_HEAD_BUFFER]u8 = undefined;
 
-http: Client,
+client: Client,
 uri: std.Uri,
 
 pub fn init(gpa: Allocator, origin: []const u8) !Self {
@@ -33,13 +32,13 @@ pub fn init(gpa: Allocator, origin: []const u8) !Self {
     };
 
     return .{
-        .http = Client{ .allocator = gpa },
+        .client = Client{ .allocator = gpa },
         .uri = uri,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.http.deinit();
+    self.client.deinit();
     self.* = undefined;
 }
 
@@ -56,7 +55,7 @@ pub const Result = struct {
 
 pub fn streamOpen(self: *Self, path: []const u8, options: Options) !Client.Request {
     const uri = self.uriFor(path);
-    var req = try self.http.open(.POST, uri, .{
+    var req = try self.client.open(.POST, uri, .{
         .keep_alive = false,
         .redirect_behavior = .not_allowed,
         .server_header_buffer = &response_headers,
@@ -71,11 +70,6 @@ pub fn streamOpen(self: *Self, path: []const u8, options: Options) !Client.Reque
     return req;
 }
 
-pub fn streamAppend(req: *Client.Request, payload: []const u8) !void {
-    try req.writer().writeAll(payload);
-    try req.connection.?.flush();
-}
-
 pub fn streamClose(arena: Allocator, req: *Client.Request, trailer: ?[]const Header) !Result {
     const client = req.client;
     const connection = req.connection.?;
@@ -84,24 +78,26 @@ pub fn streamClose(arena: Allocator, req: *Client.Request, trailer: ?[]const Hea
         client.connection_pool.release(client.allocator, connection);
     }
 
-    if (trailer) |t| blk: {
-        if (t.len == 0) break :blk try req.finish();
-
+    // Close with trailer
+    if (trailer) |t| if (t.len > 0) {
         var w = connection.writer();
         try w.writeAll("0\r\n");
-        for (req.extra_headers) |header| {
+
+        for (t) |header| {
             std.debug.assert(header.name.len != 0);
             try w.writeAll(header.name);
             try w.writeAll(": ");
             try w.writeAll(header.value);
             try w.writeAll("\r\n");
         }
+
         try w.writeAll("\r\n");
         try connection.flush();
-    } else {
-        try req.finish();
-    }
+        return respond(req, arena);
+    };
 
+    // Close without trailer
+    try req.finish();
     return respond(req, arena);
 }
 
@@ -109,7 +105,7 @@ pub fn streamClose(arena: Allocator, req: *Client.Request, trailer: ?[]const Hea
 pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u8, options: Options) !Result {
     const uri = self.uriFor(path);
     const method: std.http.Method = if (payload == null) .GET else .POST;
-    var req = try self.http.open(method, uri, .{
+    var req = try self.client.open(method, uri, .{
         .keep_alive = false,
         .redirect_behavior = .not_allowed,
         .server_header_buffer = &response_headers,

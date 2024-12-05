@@ -6,11 +6,13 @@ pub const log_runtime = std.log.scoped(.Runtime);
 /// The handler’s logging scope.
 pub const log_handler = std.log.scoped(.Handler);
 
+/// A persistant GPA and an invocation-scoped Arena.
 pub const Allocators = struct {
     gpa: std.mem.Allocator,
     arena: std.mem.Allocator,
 };
 
+/// Metadata for processing the event.
 pub const Context = struct {
     const DEFAULT_REGION: []const u8 = "us-east-1";
     const DEFAULT_MEMORY_MB: u16 = 128;

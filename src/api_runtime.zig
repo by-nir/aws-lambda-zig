@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const Client = @import("Client.zig");
+const Client = @import("Http.zig");
 const lambda = @import("lambda.zig");
 
 const URL_BASE = "/2018-06-01/runtime/";
@@ -21,7 +21,7 @@ const STREAM_HEAD_VAL = "streaming";
 pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus } || Allocator.Error;
 
 pub const ErrorRequest = struct {
-    typing: anyerror,
+    err_type: anyerror,
     message: []const u8,
     // stack_trace: ?[]const []const u8,
 };
@@ -85,18 +85,11 @@ pub fn streamInvocationOpen(
         },
         .headers = &[_]Client.Header{
             .{ .name = STREAM_HEAD_NAME, .value = STREAM_HEAD_VAL },
-            .{ .name = "Trailer", .value = ERROR_HEAD_TYPE ++ ", " ++ ERROR_HEAD_BODY },
+            .{ .name = "Trailer", .value = ERROR_HEAD_TYPE },
+            .{ .name = "Trailer", .value = ERROR_HEAD_BODY },
         },
     }) catch |e| {
         lambda.log_runtime.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
-        return error.ClientError;
-    };
-}
-
-/// Write to the stream.
-pub fn streamInvocationAppend(req: *Client.Request, payload: []const u8) Error!void {
-    Client.streamAppend(req, payload) catch |e| {
-        lambda.log_runtime.err("[Stream Request] Client failed appending: {s}", .{@errorName(e)});
         return error.ClientError;
     };
 }
@@ -110,7 +103,7 @@ pub fn streamInvocationClose(
     err_req: ?ErrorRequest,
 ) Error!InvocationSuccessResult {
     const trailer: ?[]const Client.Header = if (err_req) |err| blk: {
-        const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.typing)}) catch |e| {
+        const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.err_type)}) catch |e| {
             lambda.log_runtime.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
             return e;
         };
@@ -163,12 +156,12 @@ fn sendError(
 ) !Client.Result {
     const head = Client.Header{
         .name = ERROR_HEAD_TYPE,
-        .value = @errorName(err.typing),
+        .value = @errorName(err.err_type),
     };
     const payload = std.fmt.allocPrint(
         arena,
         "{{\"errorType\":\"{s}.{s}\",\"errorMessage\":\"{s}\",\"stackTrace\":[]}}",
-        .{ cat, @errorName(err.typing), err.message },
+        .{ cat, @errorName(err.err_type), err.message },
     ) catch |e| {
         lambda.log_runtime.err("[Send Error] Formatting error failed: {s}", .{@errorName(e)});
         return error.ClientError;
