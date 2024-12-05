@@ -1,5 +1,5 @@
 # AWS Lambda Runtime for Zig
-![Zig v0.13](https://img.shields.io/badge/Zig-v0.13-black?logo=zig&logoColor=F7A41D "Zig v0.13")
+![Zig v0.14 (dev)](https://img.shields.io/badge/Zig-v0.14_(dev)-black?logo=zig&logoColor=F7A41D "Zig v0.14 – master branch")
 [![MIT License](https://img.shields.io/github/license/by-nir/aws-lambda-zig)](/LICENSE)
 
 Write _AWS Lambda_ functions in the Zig programming language to achieve blazing fast invocations and cold starts!
@@ -23,11 +23,11 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 ### Benchmark
 
 Using zig allows creating small and fast functions.<br />
-Running the basic [Echo demo](#echo) on _`arm64` (`256 MB`, Amazon Linux 2023)_:
-- ❄️ `~11ms` cold-start duration
-- ⚡ `~1.5ms` invocation duration
-- 💾 `11 MB` max memory consumption
-- ⚖️ `1.7 MB` function size (zip)
+Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023)_:
+- ❄️ `~13ms` cold start invocation duration
+- ⚡ `~1.5ms` warm invocation duration
+- 💾 `12 MB` max memory consumption
+- ⚖️ `1.8 MB` function size (zip)
 
 ## Usage
 
@@ -66,7 +66,7 @@ fn handler(
 1. Build for **Linux** with `aarch64` (`neoverse_n1`+`neon`) or `x86_64` (+`avx2`) architecture.
 2. Name the executable `bootstrap`.
 3. Archive the executable into a **zip**.
-4. Upload the archive to Lambda (using _Amazon Linux 2023_ or another **OS-only runtime**). This shouls work through the console, CLI, SAM or anyCI solution.
+4. Upload the zip archive to Lambda (using _Amazon Linux 2023_ or another **OS-only runtime**). This shouls work through the console, CLI, SAM or any CI solution.
 
 ## Demos
 
