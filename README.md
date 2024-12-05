@@ -18,6 +18,7 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 - [ ] Life-cycle hooks
 - [ ] Layers
 - [ ] Structured events
+- [x] Build system target configuration
 - [ ] Managed build step
 
 ### Benchmark
@@ -74,14 +75,14 @@ fn handler(
 Returns a short message.
 
 ```zig
-zig build demo:hello --release
+zig build demo:hello -Darch=ARCH_OPTION --release
 ```
 
 ### Echo
 Returns the provided payload.
 
 ```zig
-zig build demo:echo --release
+zig build demo:echo -Darch=ARCH_OPTION --release
 ```
 
 ### Debug
@@ -90,21 +91,21 @@ Returns the function’s metadata, environment variables and the provided payloa
 🛑 _May expose sensative data to the public._
 
 ```zig
-zig build demo:debug --release
+zig build demo:debug -Darch=ARCH_OPTION --release
 ```
 
 ### Fail: Handler Error
 Always returns an error; the runtime logs the error to _CloudWatch_.
 
 ```zig
-zig build demo:fail --release
+zig build demo:fail -Darch=ARCH_OPTION --release
 ```
 
 ### Fail: Oversized Output
 Returns an output larger than the Lambda limit; the runtime logs an error to _CloudWatch_.
 
 ```zig
-zig build demo:oversize --release
+zig build demo:oversize -Darch=ARCH_OPTION --release
 ```
 
 ### Response Streaming
@@ -113,7 +114,7 @@ Stream a response to the client.
 👉 _Be sure to configure the function with streaming enabled._
 
 ```zig
-zig build demo:stream --release
+zig build demo:stream -Darch=ARCH_OPTION --release
 ```
 
 ### Response Streaming: Fail
@@ -122,7 +123,7 @@ Stream a response to the client and eventually fail.
 👉 _Be sure to configure the function with streaming enabled._
 
 ```zig
-zig build demo:stream_throw --release
+zig build demo:stream_throw -Darch=ARCH_OPTION --release
 ```
 
 

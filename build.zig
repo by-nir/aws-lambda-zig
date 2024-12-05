@@ -1,5 +1,9 @@
 const std = @import("std");
 
+const bld_target = @import("build/target.zig");
+pub const Arch = bld_target.Arch;
+pub const archOption = bld_target.archOption;
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptionsQueryOnly(.{});
     const optimize = b.standardOptimizeOption(.{
@@ -28,33 +32,14 @@ pub fn build(b: *std.Build) void {
     // Demos
     //
 
-    const demos = .{
-        "hello",
-        "echo",
-        "debug",
-        "fail",
-        "oversize",
-        "stream",
-        "stream_throw",
-    };
-
-    const demo_target = resolveDemoTarget(b, target);
-    inline for (demos) |name| {
-        addDemo(b, demo_target, optimize, name, lib);
-    }
-}
-
-fn resolveDemoTarget(b: *std.Build, query: std.Target.Query) std.Build.ResolvedTarget {
-    var q = query;
-    q.os_tag = .linux;
-    if (q.cpu_arch == null) q.cpu_arch = .aarch64;
-    switch (q.cpu_arch.?) {
-        // https://github.com/aws/aws-graviton-getting-started/tree/eb2d645a915d44d2693f161881e4778318ee6c3c?tab=readme-ov-file#building-for-graviton2-graviton3-and-graviton3e
-        .aarch64 => q.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.neoverse_n1 },
-        .x86_64 => q.cpu_features_add.addFeature(@intFromEnum(std.Target.x86.Feature.avx2)),
-        else => |cpu| std.log.err("Unsupported architecture: {s}", .{@tagName(cpu)}),
-    }
-    return b.resolveTargetQuery(q);
+    const demo_target = archOption(b);
+    addDemo(b, demo_target, optimize, "hello", "demo/hello.zig", lib);
+    addDemo(b, demo_target, optimize, "echo", "demo/echo.zig", lib);
+    addDemo(b, demo_target, optimize, "debug", "demo/debug.zig", lib);
+    addDemo(b, demo_target, optimize, "fail", "demo/fail.zig", lib);
+    addDemo(b, demo_target, optimize, "oversize", "demo/oversize.zig", lib);
+    addDemo(b, demo_target, optimize, "stream", "demo/stream.zig", lib);
+    addDemo(b, demo_target, optimize, "stream_throw", "demo/stream_throw.zig", lib);
 }
 
 fn addDemo(
@@ -62,13 +47,14 @@ fn addDemo(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     comptime name: []const u8,
+    path: []const u8,
     lib: *std.Build.Module,
 ) void {
     const exe = b.addExecutable(.{
         .name = "bootstrap",
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("demo/" ++ name ++ ".zig"),
+        .root_source_file = b.path(path),
     });
     exe.root_module.addImport("aws-lambda", lib);
 
