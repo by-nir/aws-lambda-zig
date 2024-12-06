@@ -9,20 +9,24 @@ pub const Arch = enum {
     arm,
 
     pub const default = .x86;
-
-    pub fn targetQuery(self: Arch) Target.Query {
-        return switch (self) {
-            .x86 => x86_target,
-            .arm => arm_target,
-        };
-    }
 };
 
 /// Creates a Lambda architecture configuration option `-Darch=(x86|arm)` and resolve an appropriate target query.
 /// Defaults to _x86_.
-pub fn archOption(b: *std.Build) std.Build.ResolvedTarget {
-    const lambda_arch = b.option(Arch, "arch", "Lambda CPU architecture") orelse Arch.default;
-    return b.resolveTargetQuery(lambda_arch.targetQuery());
+pub fn archOption(b: *std.Build) Arch {
+    return b.option(Arch, "arch", "Lambda CPU architecture") orelse Arch.default;
+}
+
+/// Resolves a target query for the given Lambda architecture.
+pub fn resolveTargetQuery(b: *std.Build, arch: Arch) std.Build.ResolvedTarget {
+    return b.resolveTargetQuery(targetQuery(arch));
+}
+
+fn targetQuery(self: Arch) Target.Query {
+    return switch (self) {
+        .x86 => x86_target,
+        .arm => arm_target,
+    };
 }
 
 const x86_target: Target.Query = blk: {

@@ -8,7 +8,10 @@ pub const log_handler = std.log.scoped(.Handler);
 
 /// A persistant GPA and an invocation-scoped Arena.
 pub const Allocators = struct {
+    /// The user owns the memory and **must deallocate it** by the end of the invocation.
     gpa: std.mem.Allocator,
+    /// An allocator tied to the invocation’s lifetime.
+    /// The runtime will deallocate the memory on the user’s behalf after the invocation resolves.
     arena: std.mem.Allocator,
 };
 
@@ -90,10 +93,6 @@ pub const Context = struct {
 
     /// Information about the Amazon Cognito identity provider when invoked through the AWS Mobile SDK.
     cognito_identity: []const u8 = &[_]u8{},
-
-    //
-    // Methods
-    //
 
     pub fn init(allocator: std.mem.Allocator) !Context {
         var env = try loadEnv(allocator);

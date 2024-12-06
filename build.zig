@@ -1,8 +1,8 @@
 const std = @import("std");
-
 const bld_target = @import("build/target.zig");
 pub const Arch = bld_target.Arch;
 pub const archOption = bld_target.archOption;
+pub const resolveTargetQuery = bld_target.resolveTargetQuery;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptionsQueryOnly(.{});
@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
         .preferred_optimize_mode = .ReleaseFast,
     });
 
-    const lib = b.addModule("aws-lambda", .{
+    const lib = b.addModule("runtime", .{
         .root_source_file = b.path("src/root.zig"),
     });
 
@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
     // Demos
     //
 
-    const demo_target = archOption(b);
+    const demo_target = resolveTargetQuery(b, archOption(b));
     addDemo(b, demo_target, optimize, "hello", "demo/hello.zig", lib);
     addDemo(b, demo_target, optimize, "echo", "demo/echo.zig", lib);
     addDemo(b, demo_target, optimize, "debug", "demo/debug.zig", lib);
