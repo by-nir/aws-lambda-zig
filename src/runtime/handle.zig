@@ -1,5 +1,5 @@
 const std = @import("std");
-const lambda = @import("lambda.zig");
+const lambda = @import("../lambda.zig");
 const Runtime = @import("Runtime.zig");
 
 const HandlerFn = *const fn (
@@ -39,7 +39,7 @@ fn serve(processor: Runtime.processorFn) void {
 /// The entry point for an AWS Lambda function.
 ///
 /// Accepts a const reference to a handler function that will process each event separetly.
-pub fn serveBuffered(comptime handler: HandlerFn) void {
+pub fn handleBuffered(comptime handler: HandlerFn) void {
     serve(struct {
         fn f(rt: *Runtime, payload: []const u8) Runtime.InvocationResult {
             if (handler(rt.allocs, &rt.context, payload)) |output| {
@@ -56,7 +56,7 @@ pub fn serveBuffered(comptime handler: HandlerFn) void {
 /// The entry point for a streaming AWS Lambda function.
 ///
 /// Accepts a const reference to a streaming handler function that will process each event separetly.
-pub fn serveStreaming(comptime handler: StreamHandlerFn) void {
+pub fn handleStreaming(comptime handler: StreamHandlerFn) void {
     serve(struct {
         fn f(runtime: *Runtime, payload: []const u8) Runtime.InvocationResult {
             var context: StreamingContext = .{};

@@ -3,16 +3,16 @@ const std = @import("std");
 const testing = std.testing;
 const Client = std.http.Client;
 const Allocator = std.mem.Allocator;
-const lambda = @import("lambda.zig");
+const lambda = @import("../lambda.zig");
 
-const MAX_HEAD_BUFFER = 16 * 1024;
-const MAX_BODY_BUFFER = 2 * 1024 * 1024;
-const USER_AGENT = "aws-lambda-zig/ (zig@" ++ @import("builtin").zig_version_string ++ ")";
-
-const Self = @This();
 pub const Header = std.http.Header;
 pub const Request = Client.Request;
 pub const HeaderIterator = std.http.HeaderIterator;
+
+const Self = @This();
+const MAX_HEAD_BUFFER = 16 * 1024;
+const MAX_BODY_BUFFER = 2 * 1024 * 1024;
+const USER_AGENT = "aws-lambda-zig/ (zig@" ++ @import("builtin").zig_version_string ++ ")";
 
 var response_headers: [MAX_HEAD_BUFFER]u8 = undefined;
 

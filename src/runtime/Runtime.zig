@@ -1,8 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const lambda = @import("lambda.zig");
-const api = @import("api_runtime.zig");
-const HttpClient = @import("Http.zig");
+const api = @import("api.zig");
+const lambda = @import("../lambda.zig");
+const HttpClient = @import("../utils/Http.zig");
 
 const Self = @This();
 

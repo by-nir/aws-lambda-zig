@@ -1,12 +1,11 @@
 //! Returns the function’s metadata, environment variables and the provided payload.
 //!
 //! 🛑 WARNING 🛑 Deploy with caution! This demo may expose sensitive data to the public.
-
 const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.serve(handler);
+    lambda.handle(handler);
 }
 
 fn handler(allocs: lambda.Allocators, ctx: *const lambda.Context, event: []const u8) ![]const u8 {

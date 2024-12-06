@@ -36,9 +36,9 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 
 
 ## Quick Start
-1. Add this package as a dependency to your project:
-    ```
-    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.1.0
+1. Add a dependency to your project:
+    ```console
+    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.1.1
     ```
 2. Configure the [executable build](#build-script):
     - Named the executable _bootstrap_.
@@ -46,12 +46,12 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 3. Implement a handler (exmaples: [minimal handler](#minimal-handler), [streaming handler](#streaming-handler)).
 4. Build the handler executable for _Linux_ with either _x86_ or _arm_ architecture.<br />
     If you used the library provided [managed architecture target](#build-target) utility, specify the architecture:
-    ```
+    ```console
     zig build --release -Darch=x86
     zig build --release -Darch=arm
     ```
 5. Archive the executable into a zip:
-    ```
+    ```console
     zip -qj lambda.zip zig-out/bin/bootstrap
     ```
 4. Deploy the zip archive to a Lambda function:
@@ -97,7 +97,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.serve(handler);
+    lambda.handle(handler);
 }
 
 // Eeach event is processed separetly the handler function.
@@ -118,7 +118,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.serveStream(handler);
+    lambda.handleStream(handler);
 }
 
 // Eeach event is processed separetly the handler function.
@@ -194,7 +194,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.serve(handler);
+    lambda.handle(handler);
 }
 
 // Eeach event is processed separetly the handler function.
@@ -220,6 +220,8 @@ When a handler returns an error, the runtime will log it to _CloudWatch_ and ret
 The runtime exposes a static logging function that can be used to manually log messages to _CloudWatch_. The function follows Zig’s standard logging conventions.
 
 ```zig
+const lambda = @import("aws-lambda");
+
 lambda.log.err("This error is logged to {s}.", .{"CloudWatch"});
 ```
 
@@ -277,7 +279,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.serveStream(handler);
+    lambda.handleStream(handler);
 }
 
 // Eeach event is processed separetly the handler function.
@@ -328,45 +330,45 @@ Not yet implemented.
 ### Hello World
 Returns a short message.
 
-```zig
-zig build demo:hello -Darch=ARCH_OPTION --release
+```console
+zig build demo:hello --release -Darch=ARCH_OPTION
 ```
 
 ### Debug
 🛑 _Deploy with caution! May expose sensitive data to the public._
 
 Returns the raw payload as-is:
-```zig
-zig build demo:echo -Darch=ARCH_OPTION --release
+```console
+zig build demo:echo --release -Darch=ARCH_OPTION
 ```
 
 Returns the function’s metadata, environment variables and the provided payload:
-```zig
-zig build demo:debug -Darch=ARCH_OPTION --release
+```console
+zig build demo:debug --release -Darch=ARCH_OPTION
 ```
 
 ### Errors
 Immediatly returns an error; the runtime logs the error to _CloudWatch_:
-```zig
-zig build demo:fail -Darch=ARCH_OPTION --release
+```console
+zig build demo:fail --release -Darch=ARCH_OPTION
 ```
 
 Returns an output larger than the Lambda limit; the runtime logs an error to _CloudWatch_:
-```zig
-zig build demo:oversize -Darch=ARCH_OPTION --release
+```console
+zig build demo:oversize --release -Darch=ARCH_OPTION
 ```
 
 ### Response Streaming
 👉 _Be sure to configure the function with streaming enabled._
 
 Stream a response to the client and continue execution of the response conclusion:
-```zig
-zig build demo:stream -Darch=ARCH_OPTION --release
+```console
+zig build demo:stream --release -Darch=ARCH_OPTION
 ```
 
 Stream a response to the client and eventually fail:
-```zig
-zig build demo:stream_throw -Darch=ARCH_OPTION --release
+```console
+zig build demo:stream_throw --release -Darch=ARCH_OPTION
 ```
 
 ## License

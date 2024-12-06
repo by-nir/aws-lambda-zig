@@ -1,9 +1,8 @@
 //! Returns an output larger than the Lambda limit.
-
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.serve(handler);
+    lambda.handle(handler);
 }
 
 // Max lambda payload size is 6MB.

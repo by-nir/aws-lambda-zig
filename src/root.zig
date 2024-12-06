@@ -3,15 +3,15 @@ pub const log = lambda.log_handler;
 pub const Context = lambda.Context;
 pub const Allocators = lambda.Allocators;
 
-const server = @import("server.zig");
-pub const Stream = server.Stream;
-pub const serve = server.serveBuffered;
-pub const serveStream = server.serveStreaming;
+const hdl = @import("runtime/handle.zig");
+pub const Stream = hdl.Stream;
+pub const handle = hdl.handleBuffered;
+pub const handleStream = hdl.handleStreaming;
 
 test {
-    _ = @import("Http.zig");
-    _ = @import("api_runtime.zig");
-    _ = @import("Runtime.zig");
+    _ = @import("utils/Http.zig");
     _ = lambda;
-    _ = server;
+    _ = @import("runtime/api.zig");
+    _ = @import("runtime/Runtime.zig");
+    _ = hdl;
 }

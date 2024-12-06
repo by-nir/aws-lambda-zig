@@ -1,12 +1,11 @@
 //! Stream a response to the client and eventually fail.
 //!
 //! 👉 _Be sure to enable streaming support in the function configuration._
-
 const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.serveStream(handler);
+    lambda.handleStream(handler);
 }
 
 /// 0.5 seconds (in nanoseconds)

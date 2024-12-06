@@ -1,8 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const Client = @import("Http.zig");
-const lambda = @import("lambda.zig");
+const lambda = @import("../lambda.zig");
+const Client = @import("../utils/Http.zig");
 
 const URL_BASE = "/2018-06-01/runtime/";
 const URL_INIT_FAIL: []const u8 = URL_BASE ++ "init/error";
