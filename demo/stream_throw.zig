@@ -11,7 +11,7 @@ pub fn main() void {
 /// 0.5 seconds (in nanoseconds)
 const HALF_SEC = 500_000_000;
 
-fn handler(_: lambda.Allocators, _: *const lambda.Context, _: []const u8, stream: lambda.Stream) !void {
+fn handler(_: lambda.Allocators, _: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
     // Start a textual event stream.
     try stream.open("text/event-stream");
 

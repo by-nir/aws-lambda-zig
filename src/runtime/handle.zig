@@ -4,14 +4,14 @@ const Runtime = @import("Runtime.zig");
 
 const HandlerFn = *const fn (
     allocs: lambda.Allocators,
-    context: *const lambda.Context,
+    context: lambda.Context,
     /// The event’s JSON payload
     event: []const u8,
 ) anyerror![]const u8;
 
 const StreamHandlerFn = *const fn (
     allocs: lambda.Allocators,
-    context: *const lambda.Context,
+    context: lambda.Context,
     /// The event’s JSON payload
     event: []const u8,
     stream: Stream,
@@ -42,7 +42,7 @@ fn serve(processor: Runtime.processorFn) void {
 pub fn handleBuffered(comptime handler: HandlerFn) void {
     serve(struct {
         fn f(rt: *Runtime, payload: []const u8) Runtime.InvocationResult {
-            if (handler(rt.allocs, &rt.context, payload)) |output| {
+            if (handler(rt.allocs, rt.context, payload)) |output| {
                 rt.respondSuccess(output) catch return .abort;
             } else |e| {
                 rt.respondFailure(e, @errorReturnTrace()) catch return .abort;
@@ -62,7 +62,7 @@ pub fn handleStreaming(comptime handler: StreamHandlerFn) void {
             var context: StreamingContext = .{};
             var stream: Runtime.Stream = undefined;
 
-            handler(runtime.allocs, &runtime.context, payload, .{
+            handler(runtime.allocs, runtime.context, payload, .{
                 .runtime = runtime,
                 .stream = &stream,
                 .context = &context,

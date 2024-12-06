@@ -8,7 +8,7 @@ pub fn main() void {
     lambda.handle(handler);
 }
 
-fn handler(allocs: lambda.Allocators, ctx: *const lambda.Context, event: []const u8) ![]const u8 {
+fn handler(allocs: lambda.Allocators, ctx: lambda.Context, event: []const u8) ![]const u8 {
     var str = try std.ArrayList(u8).initCapacity(allocs.arena, 1024);
     const writer = str.writer();
     try writer.print(

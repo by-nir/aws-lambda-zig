@@ -67,7 +67,7 @@ pub fn build(b: *std.Build) void {
     // Add an architecture confuration option and resolves a target query.
     const target = lambda.resolveTargetQuery(b, lambda.archOption(b));
     
-    // Alternativly, hard-code an architecture.
+    // Alternatively, hard-code an architecture.
     // const target = lambda.resolveTargetQuery(b, .arm);
 
     const optimize = b.standardOptimizeOption(.{
@@ -103,9 +103,9 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,      // Managed allocators
-    context: *const lambda.Context, // Function metadata
-    payload: []const u8,            // Raw event payload (JSON)
+    allocs: lambda.Allocators,  // Managed allocators
+    context: lambda.Context,    // Function metadata
+    payload: []const u8,        // Raw event payload (JSON)
 ) ![]const u8 {
     return "Hello, world!";
 }
@@ -124,10 +124,10 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,      // Managed allocators
-    context: *const lambda.Context, // Function metadata
-    payload: []const u8,            // Raw event payload (JSON)
-    stream: lambda.Stream,          // Response stream
+    allocs: lambda.Allocators,  // Managed allocators
+    context: lambda.Context,    // Function metadata
+    payload: []const u8,        // Raw event payload (JSON)
+    stream: lambda.Stream,      // Response stream
 ) !void {
     // Start streaming the response for a given content type.
     try stream.open("text/event-stream");
@@ -166,13 +166,11 @@ const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn build(b: *std.Build) void {
-    // ···
-
-    // Confuration option:
+    // Option A – CLI confuration:
     const arch = lambda.archOption(b);
     const target = lambda.resolveTargetQuery(b, arch);
     
-    // Hard-coded architecture (`.x86` or `.arm`):
+    // Option B – Hard-coded architecture (`.x86` or `.arm`):
     const target = lambda.resolveTargetQuery(b, .arm);
 
     // ···
@@ -200,9 +198,9 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,      // Managed allocators
-    context: *const lambda.Context, // Function metadata (including env)
-    payload: []const u8,            // Raw event payload (JSON)
+    allocs: lambda.Allocators,  // Managed allocators
+    context: lambda.Context,    // Function metadata (including env)
+    payload: []const u8,        // Raw event payload (JSON)
 ) ![]const u8 {
     // Implement the function behavior to process the input `payload` and return a response...
     // Usage instructions for `allocs` and `context` are provided in the following sections.
@@ -242,7 +240,7 @@ The handler signature includes a parameter for the managed allocators (`allocs: 
 > While `allocs.gpa` may be used to persist data and services between invocations, for such cases consider using [lifecycle services](#lifecycle-hooks--services) or [extensions](#extensions--telemetry).
 
 ### Function Context
-The handler signature includes a metadata parameter (`context: *const lambda.Context`), it may be utilized for the event processing.
+The handler signature includes a metadata parameter (`context: lambda.Context`), it may be utilized for the event processing.
 
 #### Environment
 | Field | Type | Description |
@@ -285,10 +283,10 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,      // Managed allocators
-    context: *const lambda.Context, // Function metadata
-    payload: []const u8,            // Raw event payload (JSON)
-    stream: lambda.Stream,          // Stream delegate
+    allocs: lambda.Allocators,  // Managed allocators
+    context: lambda.Context,    // Function metadata
+    payload: []const u8,        // Raw event payload (JSON)
+    stream: lambda.Stream,      // Stream delegate
 ) !void {
     // Start streaming the response for a given content type.
     try stream.open("text/event-stream");
