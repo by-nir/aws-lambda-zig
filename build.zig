@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
         .preferred_optimize_mode = .ReleaseFast,
     });
 
-    const lib = b.addModule("runtime", .{
+    const lib = b.addModule("lambda", .{
         .root_source_file = b.path("src/root.zig"),
     });
 

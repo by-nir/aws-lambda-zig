@@ -38,7 +38,7 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 ## Quick Start
 1. Add a dependency to your project:
     ```console
-    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.1.1
+    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.1.2
     ```
 2. Configure the [executable build](#build-script):
     - Named the executable _bootstrap_.
@@ -85,7 +85,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     // Import the runtime module.
-    const runtime = b.dependency("aws-lambda", .{}).module("runtime");
+    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
     exe.root_module.addImport("aws-lambda", runtime);
 }
 ```
