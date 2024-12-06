@@ -4,6 +4,9 @@ const std = @import("std");
 pub const log_runtime = std.log.scoped(.Runtime);
 
 /// The handler’s logging scope.
+///
+/// In release mode only _error_ level is preserved, other levels are removed at compile time.
+/// This behavior may be overriden at build.
 pub const log_handler = std.log.scoped(.Handler);
 
 /// A persistant GPA and an invocation-scoped Arena.

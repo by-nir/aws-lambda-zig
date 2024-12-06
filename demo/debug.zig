@@ -1,6 +1,6 @@
 //! Returns the function’s metadata, environment variables and the provided payload.
 //!
-//! 🛑 WARNING 🛑 This demo may expose sensative data to the public.
+//! 🛑 WARNING 🛑 Deploy with caution! This demo may expose sensitive data to the public.
 
 const std = @import("std");
 const lambda = @import("aws-lambda");

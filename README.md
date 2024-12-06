@@ -9,17 +9,16 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 [💽 Demos](#demos)
 
 ## Features
-
 - [x] Runtime API
 - [ ] Extensions API
 - [ ] Telemetry API
-- [ ] Layers
 - [ ] Structured events
 - [x] Response streaming
 - [x] CloudWatch & X-Ray integration
 - [x] Build system target configuration
 - [ ] Managed build step
 - [ ] Lifecycle hooks & services
+- [ ] Testing utilities
 
 ### Benchmark
 Using zig allows creating small and fast functions.<br />
@@ -39,7 +38,7 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 ## Quick Start
 1. Add this package as a dependency to your project:
     ```
-    zig fetch --save https://github.com/by-nir/aws-lambda-zig
+    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.1.0
     ```
 2. Configure the [executable build](#build-script):
     - Named the executable _bootstrap_.
@@ -225,7 +224,7 @@ lambda.log.err("This error is logged to {s}.", .{"CloudWatch"});
 ```
 
 > [!WARNING]
-> In release mode builds only _error_ level is preserved, the rest are removed in compile time. This behavior may be overriden at build.
+> In release mode only _error_ level is preserved, other levels are removed at compile time. This behavior may be overriden at build.
 
 ### Memory Allocation
 Since the runtime manages the function and invocation lifecycle, it also owns the memory.
@@ -334,7 +333,7 @@ zig build demo:hello -Darch=ARCH_OPTION --release
 ```
 
 ### Debug
-🛑 _Deploy with caution! May expose sensative data to the public._
+🛑 _Deploy with caution! May expose sensitive data to the public._
 
 Returns the raw payload as-is:
 ```zig
@@ -375,6 +374,5 @@ The author and contributors are not responsible for any issues or damages caused
 by the use of this software, part of it, or its derivatives. See [LICENSE](/LICENSE)
 for the complete terms of use.
 
-> [!NOTE]
-> _AWS Lambda Runtime for Zig_ is not an official _Amazon Web Services_ software, nor
-> is it affiliated with _Amazon Web Services, Inc_.
+**_AWS Lambda Runtime for Zig_ is not an official _Amazon Web Services_ software,
+nor is it affiliated with _Amazon Web Services, Inc_.**
