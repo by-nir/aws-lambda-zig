@@ -2,7 +2,7 @@
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.handle(handler);
+    lambda.handle(handler, .{});
 }
 
 fn handler(_: lambda.Allocators, _: lambda.Context, _: []const u8) ![]const u8 {

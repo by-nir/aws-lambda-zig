@@ -97,7 +97,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.handle(handler);
+    lambda.handle(handler, .{});
 }
 
 // Eeach event is processed separetly the handler function.
@@ -118,7 +118,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.handleStream(handler);
+    lambda.handleStream(handler, .{});
 }
 
 // Eeach event is processed separetly the handler function.
@@ -192,7 +192,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.handle(handler);
+    lambda.handle(handler, .{});
 }
 
 // Eeach event is processed separetly the handler function.
@@ -277,7 +277,7 @@ const lambda = @import("aws-lambda");
 // Entry point for the Lambda function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.handleStream(handler);
+    lambda.handleStream(handler, .{});
 }
 
 // Eeach event is processed separetly the handler function.

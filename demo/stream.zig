@@ -5,7 +5,7 @@ const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.handleStream(handler);
+    lambda.handleStream(handler, .{});
 }
 
 /// 0.5 seconds (in nanoseconds)

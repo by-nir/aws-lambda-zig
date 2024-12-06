@@ -21,9 +21,9 @@ const STREAM_HEAD_VAL = "streaming";
 pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus } || Allocator.Error;
 
 pub const ErrorRequest = struct {
-    err_type: anyerror,
+    type: anyerror,
     message: []const u8,
-    // stack_trace: ?[]const []const u8,
+    // TODO: stack_trace: ?[]const []const u8,
 };
 
 pub const ErrorResponse = struct {
@@ -31,7 +31,7 @@ pub const ErrorResponse = struct {
     message: []const u8,
 
     /// The error type.
-    error_type: []const u8,
+    type: []const u8,
 
     pub fn parse(arena: Allocator, json: []const u8) !ErrorResponse {
         const E = struct { errorMessage: []const u8, errorType: []const u8 };
@@ -40,7 +40,7 @@ pub const ErrorResponse = struct {
         }) catch return error.ParseError;
         return ErrorResponse{
             .message = parsed.errorMessage,
-            .error_type = parsed.errorType,
+            .type = parsed.errorType,
         };
     }
 };
@@ -103,7 +103,7 @@ pub fn streamInvocationClose(
     err_req: ?ErrorRequest,
 ) Error!InvocationSuccessResult {
     const trailer: ?[]const Client.Header = if (err_req) |err| blk: {
-        const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.err_type)}) catch |e| {
+        const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.type)}) catch |e| {
             lambda.log_runtime.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
             return e;
         };
@@ -156,12 +156,12 @@ fn sendError(
 ) !Client.Result {
     const head = Client.Header{
         .name = ERROR_HEAD_TYPE,
-        .value = @errorName(err.err_type),
+        .value = @errorName(err.type),
     };
     const payload = std.fmt.allocPrint(
         arena,
         "{{\"errorType\":\"{s}.{s}\",\"errorMessage\":\"{s}\",\"stackTrace\":[]}}",
-        .{ cat, @errorName(err.err_type), err.message },
+        .{ cat, @errorName(err.type), err.message },
     ) catch |e| {
         lambda.log_runtime.err("[Send Error] Formatting error failed: {s}", .{@errorName(e)});
         return error.ClientError;

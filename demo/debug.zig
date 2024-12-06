@@ -5,7 +5,7 @@ const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn main() void {
-    lambda.handle(handler);
+    lambda.handle(handler, .{});
 }
 
 fn handler(allocs: lambda.Allocators, ctx: lambda.Context, event: []const u8) ![]const u8 {
