@@ -105,7 +105,7 @@ pub const Stream = struct {
     ///
     /// If an error occurs, the stream is closed and the handler should return as soon as possible.
     pub fn write(self: Stream, payload: []const u8) Error!void {
-        if (self.isActive()) return error.ClosedStream;
+        if (!self.isActive()) return error.ClosedStream;
         self.stream.write(payload) catch return self.runtimeFailiure();
     }
 

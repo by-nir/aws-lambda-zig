@@ -23,7 +23,7 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 
 ### Benchmark
 Using zig allows creating small and fast functions.<br />
-Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023)_:
+Minimal [Hello World demo](#hello-world) (_arm64_ 256 MiB, Amazon Linux 2023):
 
 - ❄️ `~13ms` cold start invocation duration
 - ⚡ `~1.5ms` warm invocation duration
@@ -38,7 +38,7 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 ## Quick Start
 1. Add a dependency to your project:
     ```console
-    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.2.0
+    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.2.1
     ```
 2. Configure the [executable build](#build-script):
     - Named the executable _bootstrap_.
