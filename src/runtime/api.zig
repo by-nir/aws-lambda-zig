@@ -1,8 +1,11 @@
 const std = @import("std");
+const mem = std.mem;
 const testing = std.testing;
-const Allocator = std.mem.Allocator;
-const lambda = @import("../lambda.zig");
+const Allocator = mem.Allocator;
 const Client = @import("../utils/Http.zig");
+const log = @import("../utils/log.zig").runtime;
+
+pub const ENV_ORIGIN = "AWS_LAMBDA_RUNTIME_API";
 
 const URL_BASE = "/2018-06-01/runtime/";
 const URL_INIT_FAIL: []const u8 = URL_BASE ++ "init/error";
@@ -23,7 +26,7 @@ pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus 
 pub const ErrorRequest = struct {
     type: anyerror,
     message: []const u8,
-    // TODO: stack_trace: ?[]const []const u8,
+    // stack_trace: ?[]const []const u8,
 };
 
 pub const ErrorResponse = struct {
@@ -89,7 +92,7 @@ pub fn streamInvocationOpen(
             .{ .name = "Trailer", .value = ERROR_HEAD_BODY },
         },
     }) catch |e| {
-        lambda.log_runtime.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
+        log.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
 }
@@ -104,12 +107,12 @@ pub fn streamInvocationClose(
 ) Error!InvocationSuccessResult {
     const trailer: ?[]const Client.Header = if (err_req) |err| blk: {
         const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.type)}) catch |e| {
-            lambda.log_runtime.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
+            log.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
             return e;
         };
         const size = std.base64.standard.Encoder.calcSize(err.message.len);
         const body = arena.alloc(u8, size) catch |e| {
-            lambda.log_runtime.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
+            log.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
             return e;
         };
         _ = std.base64.standard.Encoder.encode(body, err.message);
@@ -120,7 +123,7 @@ pub fn streamInvocationClose(
     } else null;
 
     var result = Client.streamClose(arena, req, trailer) catch |e| {
-        lambda.log_runtime.err("[Stream Request] Client failed closing: {s}", .{@errorName(e)});
+        log.err("[Stream Request] Client failed closing: {s}", .{@errorName(e)});
         return error.ClientError;
     };
     return InvocationSuccessResult.init(arena, &result);
@@ -140,9 +143,14 @@ pub fn sendInvocationFail(
     return InvocationFailResult.init(arena, result);
 }
 
-fn requestPath(arena: Allocator, comptime fmt: []const u8, req_id: []const u8, err_phase: []const u8) ![]const u8 {
+fn requestPath(
+    arena: Allocator,
+    comptime fmt: []const u8,
+    req_id: []const u8,
+    err_phase: []const u8,
+) ![]const u8 {
     return std.fmt.allocPrint(arena, fmt, .{req_id}) catch |e| {
-        lambda.log_runtime.err(URL_ERROR, .{ err_phase, @errorName(e) });
+        log.err(URL_ERROR, .{ err_phase, @errorName(e) });
         return e;
     };
 }
@@ -163,7 +171,7 @@ fn sendError(
         "{{\"errorType\":\"{s}.{s}\",\"errorMessage\":\"{s}\",\"stackTrace\":[]}}",
         .{ cat, @errorName(err.type), err.message },
     ) catch |e| {
-        lambda.log_runtime.err("[Send Error] Formatting error failed: {s}", .{@errorName(e)});
+        log.err("[Send Error] Formatting error failed: {s}", .{@errorName(e)});
         return error.ClientError;
     };
 
@@ -173,14 +181,14 @@ fn sendError(
             .content_type = .{ .override = ERROR_CONTENT_TYPE },
         },
     }) catch |e| {
-        lambda.log_runtime.err("[Send Error] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
+        log.err("[Send Error] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
 }
 
 fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]const u8) !Client.Result {
     return client.send(arena, path, payload, .{}) catch |e| {
-        lambda.log_runtime.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
+        log.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
 }
@@ -214,7 +222,7 @@ const StatusResponse = struct {
     }
 };
 
-const InvocationEvent = struct {
+pub const InvocationEvent = struct {
     /// AWS request ID associated with the request.
     request_id: []const u8,
 
@@ -248,17 +256,17 @@ const InvocationEvent = struct {
         };
 
         while (result.headers.next()) |header| {
-            if (std.mem.eql(u8, "Lambda-Runtime-Aws-Request-Id", header.name))
+            if (mem.eql(u8, "Lambda-Runtime-Aws-Request-Id", header.name))
                 event.request_id = try arena.dupe(u8, header.value)
-            else if (std.mem.eql(u8, "Lambda-Runtime-Trace-Id", header.name))
+            else if (mem.eql(u8, "Lambda-Runtime-Trace-Id", header.name))
                 event.xray_trace = try arena.dupe(u8, header.value)
-            else if (std.mem.eql(u8, "Lambda-Runtime-Invoked-Function-Arn", header.name))
+            else if (mem.eql(u8, "Lambda-Runtime-Invoked-Function-Arn", header.name))
                 event.invoked_arn = try arena.dupe(u8, header.value)
-            else if (std.mem.eql(u8, "Lambda-Runtime-Deadline-Ms", header.name))
+            else if (mem.eql(u8, "Lambda-Runtime-Deadline-Ms", header.name))
                 event.deadline_ms = std.fmt.parseInt(u64, header.value, 10) catch 0
-            else if (std.mem.eql(u8, "Lambda-Runtime-Client-Context", header.name))
+            else if (mem.eql(u8, "Lambda-Runtime-Client-Context", header.name))
                 event.client_context = try arena.dupe(u8, header.value)
-            else if (std.mem.eql(u8, "Lambda-Runtime-Cognito-Identity", header.name))
+            else if (mem.eql(u8, "Lambda-Runtime-Cognito-Identity", header.name))
                 event.cognito_identity = try arena.dupe(u8, header.value);
         }
 

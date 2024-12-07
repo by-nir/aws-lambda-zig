@@ -3,7 +3,6 @@ const std = @import("std");
 const testing = std.testing;
 const Client = std.http.Client;
 const Allocator = std.mem.Allocator;
-const lambda = @import("../lambda.zig");
 
 pub const Header = std.http.Header;
 pub const Request = Client.Request;

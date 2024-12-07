@@ -1,22 +1,11 @@
 const std = @import("std");
-const lambda = @import("../lambda.zig");
 const srv = @import("serve.zig");
 const Server = srv.Server;
+const Context = @import("context.zig").Context;
+const log = @import("../utils/log.zig").runtime;
 
-const HandlerFn = *const fn (
-    allocs: lambda.Allocators,
-    context: lambda.Context,
-    /// The event’s JSON payload
-    event: []const u8,
-) anyerror![]const u8;
-
-const StreamHandlerFn = *const fn (
-    allocs: lambda.Allocators,
-    context: lambda.Context,
-    /// The event’s JSON payload
-    event: []const u8,
-    stream: Stream,
-) anyerror!void;
+const HandlerFn = *const fn (context: Context, event: []const u8) anyerror![]const u8;
+const StreamHandlerFn = *const fn (context: Context, event: []const u8, stream: Stream) anyerror!void;
 
 fn serve(options: srv.ServerOptions, processor: srv.ProcessorFn) void {
     // Initialize the server.
@@ -34,13 +23,8 @@ fn serve(options: srv.ServerOptions, processor: srv.ProcessorFn) void {
 /// Accepts a const reference to a handler function that will process each event separetly.
 pub fn handleBuffered(comptime handler: HandlerFn, options: srv.ServerOptions) void {
     serve(options, struct {
-        fn f(server: *Server, payload: []const u8) srv.InvocationResult {
-            const allocs = lambda.Allocators{
-                .gpa = server.gpa.allocator(),
-                .arena = server.arena.allocator(),
-            };
-
-            if (handler(allocs, server.context, payload)) |output| {
+        fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
+            if (handler(context, event)) |output| {
                 server.respondSuccess(output) catch return .abort;
             } else |e| {
                 server.respondFailure(e, @errorReturnTrace()) catch return .abort;
@@ -56,35 +40,30 @@ pub fn handleBuffered(comptime handler: HandlerFn, options: srv.ServerOptions) v
 /// Accepts a const reference to a streaming handler function that will process each event separetly.
 pub fn handleStreaming(comptime handler: StreamHandlerFn, options: srv.ServerOptions) void {
     serve(options, struct {
-        fn f(server: *Server, payload: []const u8) srv.InvocationResult {
-            var context: StreamingContext = .{};
+        fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
             var stream: Server.Stream = undefined;
-            const allocs = lambda.Allocators{
-                .gpa = server.gpa.allocator(),
-                .arena = server.arena.allocator(),
-            };
+            var stream_ctx: StreamingContext = .{};
 
-            handler(allocs, server.context, payload, .{
+            handler(context, event, .{
                 .server = server,
                 .stream = &stream,
-                .context = &context,
+                .context = &stream_ctx,
             }) catch |err| {
-                if (context.state == .pending) {
+                if (stream_ctx.state == .pending) {
                     server.respondFailure(err, @errorReturnTrace()) catch return .abort;
-                    return context.invocationResult();
+                    return stream_ctx.invocationResult();
                 } else {
-                    const name = @errorName(err);
-                    lambda.log_runtime.err("The handler returned an error after opening a stream: {s}", .{name});
+                    log.err("The handler returned an error after opening a stream: {s}", .{@errorName(err)});
                 }
             };
 
-            switch (context.state) {
+            switch (stream_ctx.state) {
                 .pending => server.respondFailure(error.NoResponse, null) catch return .abort,
                 .active => stream.close(null) catch return .abort,
                 .end => {},
             }
 
-            return context.invocationResult();
+            return stream_ctx.invocationResult();
         }
     }.f);
 }

@@ -15,9 +15,10 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 - [ ] Structured events
 - [x] Response streaming
 - [x] CloudWatch & X-Ray integration
+- [ ] Lifecycle hooks
+- [ ] Dependency injection
 - [x] Build system target configuration
 - [ ] Managed build step
-- [ ] Lifecycle hooks & services
 - [ ] Testing utilities
 
 ### Benchmark
@@ -33,7 +34,6 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 > [!TIP]
 > Check out [AWS SDK for Zig](https://github.com/by-nir/aws-sdk-zig) for a
 > comprehensive Zig-based AWS cloud solution.
-
 
 ## Quick Start
 1. Add a dependency to your project:
@@ -103,9 +103,8 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,  // Managed allocators
-    context: lambda.Context,    // Function metadata
-    payload: []const u8,        // Raw event payload (JSON)
+    ctx: lambda.Context,    // Metadata and utilities
+    event: []const u8,      // Raw event payload (JSON)
 ) ![]const u8 {
     return "Hello, world!";
 }
@@ -124,10 +123,9 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,  // Managed allocators
-    context: lambda.Context,    // Function metadata
-    payload: []const u8,        // Raw event payload (JSON)
-    stream: lambda.Stream,      // Response stream
+    ctx: lambda.Context,    // Metadata and utilities
+    event: []const u8,      // Raw event payload (JSON)
+    stream: lambda.Stream,  // Response stream
 ) !void {
     // Start streaming the response for a given content type.
     try stream.open("text/event-stream");
@@ -198,13 +196,10 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,  // Managed allocators
-    context: lambda.Context,    // Function metadata (including env)
-    payload: []const u8,        // Raw event payload (JSON)
+    ctx: lambda.Context,    // Metadata and utilities
+    event: []const u8,      // Raw event payload (JSON)
 ) ![]const u8 {
-    // Implement the function behavior to process the input `payload` and return a response...
-    // Usage instructions for `allocs` and `context` are provided in the following sections.
-
+    // The handler’s implement should process the `event` payload and return a response payload.
     return switch(payload.len) {
         0 => "Empty payload.",
         else => payload,
@@ -212,7 +207,7 @@ fn handler(
 }
 ```
 
-### Errors & Logging
+#### Errors & Logging
 When a handler returns an error, the runtime will log it to _CloudWatch_ and return an error response to the client.
 
 The runtime exposes a static logging function that can be used to manually log messages to _CloudWatch_. The function follows Zig’s standard logging conventions.
@@ -226,39 +221,32 @@ lambda.log.err("This error is logged to {s}.", .{"CloudWatch"});
 > [!WARNING]
 > In release mode only _error_ level is preserved, other levels are removed at compile time. This behavior may be overriden at build.
 
-### Memory Allocation
-Since the runtime manages the function and invocation lifecycle, it also owns the memory.
+#### Handler Context
+The handler signature includes the parameter `ctx: lambda.Context`, it provides metadata and utilities to assist with the processing the event.
 
-The handler signature includes a parameter for the managed allocators (`allocs: lambda.Allocators`).
+The following sections describe the context...
+
+#### Memory Allocation
+Since the runtime manages the function and invocation lifecycle, it also owns the memory. The _handler context_ provides two allocators:
 
 | Allocator | Behavior |
 | --------- | -------- |
-| `allocs.gpa` | You own the memory and **must deallocate it** by the end of the invocation. |
-| `allocs.arena` | The memory is tied to the invocation’s lifetime. The runtime will deallocate it on your behalf after the invocation resolves. |
+| `ctx.gpa` | You own the memory and **must deallocate it** by the end of the invocation. |
+| `ctx.arena` | The memory is tied to the invocation’s lifetime. The runtime will deallocate it on your behalf after the invocation resolves. |
 
 > [!NOTE]
-> While `allocs.gpa` may be used to persist data and services between invocations, for such cases consider using [lifecycle services](#lifecycle-hooks--services) or [extensions](#extensions--telemetry).
+> While `ctx.gpa` may be used to persist data and services between invocations, for such cases consider using [dependency injection](#dependency-injection) or [extensions](#extensions--telemetry).
 
-### Function Context
-The handler signature includes a metadata parameter (`context: lambda.Context`), it may be utilized for the event processing.
+#### Environment Variables
+The functions’ environment variables are mapped by the _handler context_, they can be accesed using the `env(key)` method:
 
-#### Environment
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `env` | `*const std.process.EnvMap` | Environment variables; user-provided and [function meta](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html#configuration-envvars-runtime) |
-| `aws_region` | `[]const u8` | AWS Region where the Lambda function is executed. |
-| `aws_access_id` | `[]const u8` | Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html). |
-| `aws_access_secret` | `[]const u8` | Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html). |
-| `aws_session_token` | `[]const u8` | Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html). |
-| `function_name` | `[]const u8` | Name of the function. |
-| `function_version` | `[]const u8` | Version of the function being executed. |
-| `function_size` | `u16` | Amount of memory available to the function in MB. |
-| `function_init_type` | `InitType` | Initialization type of the function. |
-| `function_handler` | `[]const u8` | Handler location configured on the function. |
-| `log_group` | `[]const u8` | Name of the Amazon CloudWatch Logs group for the function. |
-| `log_stream` | `[]const u8` | Name of the Amazon CloudWatch Logs stream for the function. |
+```zig
+const foo_value = ctx.env("FOO_KEY") orelse "some_default_value";
+```
 
-#### Invocation
+#### Invocation Metadata
+Per-invocation metadata is provided by the _handler context_ `ctx.request` field. It contains the following fields:
+
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `request_id` | `[]const u8` | AWS request ID associated with the request. |
@@ -267,6 +255,23 @@ The handler signature includes a metadata parameter (`context: lambda.Context`),
 | `deadline_ms` | `u64` | Function execution deadline counted in milliseconds since the _Unix epoch_. |
 | `client_context` | `[]const u8` | Information about the client application and device when invoked through the AWS Mobile SDK. |
 | `cognito_identity` | `[]const u8` | Information about the Amazon Cognito identity provider when invoked through the AWS Mobile SDK. |
+
+#### Configuration Metadata
+Static config metadata is provided by the _handler context_ `ctx.config` field. It contains the following fields:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `aws_region` | `[]const u8` | AWS Region where the Lambda function is executed. |
+| `aws_access_id` | `[]const u8` | Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html). |
+| `aws_access_secret` | `[]const u8` | Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html). |
+| `aws_session_token` | `[]const u8` | Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html). |
+| `func_name` | `[]const u8` | Name of the function. |
+| `func_version` | `[]const u8` | Version of the function being executed. |
+| `func_size` | `u16` | Amount of memory available to the function in MB. |
+| `func_init` | `InitType` | Initialization type of the function. |
+| `func_handler` | `[]const u8` | Handler location configured on the function. |
+| `log_group` | `[]const u8` | Name of the Amazon CloudWatch Logs group for the function. |
+| `log_stream` | `[]const u8` | Name of the Amazon CloudWatch Logs stream for the function. |
 
 ### Response Streaming
 The runtime supports streaming responses to the client; though implementing a streaming handler differs from the standard handler.
@@ -283,10 +288,9 @@ pub fn main() void {
 // Eeach event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
-    allocs: lambda.Allocators,  // Managed allocators
-    context: lambda.Context,    // Function metadata
-    payload: []const u8,        // Raw event payload (JSON)
-    stream: lambda.Stream,      // Stream delegate
+    ctx: lambda.Context,    // Metadata and utilities
+    event: []const u8,      // Raw event payload (JSON)
+    stream: lambda.Stream,  // Stream delegate
 ) !void {
     // Start streaming the response for a given content type.
     try stream.open("text/event-stream");
@@ -317,7 +321,10 @@ _Closing the stream is not required._
 ### Structured Events
 Not yet implemented.
 
-### Lifecycle Hooks & Services
+### Lifecycle Hooks
+Not yet implemented.
+
+### Dependency Injection
 Not yet implemented.
 
 ### Extensions & Telemetry
@@ -340,7 +347,7 @@ Returns the raw payload as-is:
 zig build demo:echo --release -Darch=ARCH_OPTION
 ```
 
-Returns the function’s metadata, environment variables and the provided payload:
+Returns the function’s metadata, environment variables and the event’s raw payload:
 ```console
 zig build demo:debug --release -Darch=ARCH_OPTION
 ```

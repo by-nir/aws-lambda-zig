@@ -1,12 +1,18 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const api = @import("api.zig");
-const lambda = @import("../lambda.zig");
+const ctx = @import("context.zig");
 const HttpClient = @import("../utils/Http.zig");
+const environ = @import("../utils/environ.zig");
+const log = @import("../utils/log.zig").runtime;
 
 pub const ServerOptions = struct {};
 
-pub const ProcessorFn = *const fn (server: *Server, payload: []const u8) InvocationResult;
+pub const ProcessorFn = *const fn (
+    server: *Server,
+    context: ctx.Context,
+    event: []const u8,
+) InvocationResult;
 
 pub const InvocationResult = enum {
     /// The runtime may process another event.
@@ -18,8 +24,9 @@ pub const InvocationResult = enum {
 pub const Server = struct {
     gpa: std.heap.GeneralPurposeAllocator(.{}),
     arena: std.heap.ArenaAllocator,
-    context: lambda.Context,
     http: HttpClient,
+    env: std.process.EnvMap,
+    request_id: []const u8 = "",
 
     pub fn init(self: *Server, _: ServerOptions) !void {
         errdefer self.* = undefined;
@@ -33,28 +40,33 @@ pub const Server = struct {
         const arena_alloc = self.arena.allocator();
         errdefer self.arena.deinit();
 
-        self.context = lambda.Context.init(gpa_alloc) catch |err| {
-            initFailed(arena_alloc, null, err, "Creating the runtime context failed");
-            return err;
+        environ.load(&self.env, gpa_alloc) catch |err| {
+            return initFailed(arena_alloc, null, err, "Loading the environment variables failed");
         };
-        errdefer self.context.deinit(gpa_alloc);
+        errdefer self.env.deinit();
 
-        self.http = HttpClient.init(gpa_alloc, self.context.api_origin) catch |err| {
-            initFailed(arena_alloc, null, err, "Creating a http client failed");
-            return err;
+        const api_origin = blk: {
+            const origin = self.env.get(api.ENV_ORIGIN);
+            if (origin) |o| if (o.len > 0) break :blk o;
+
+            return initFailed(arena_alloc, null, error.MissingRuntimeOrigin, "Missing the runtime’s API origin URL");
+        };
+
+        self.http = HttpClient.init(gpa_alloc, api_origin) catch |err| {
+            return initFailed(arena_alloc, null, err, "Creating a HTTP client failed");
         };
     }
 
     pub fn deinit(self: *Server) void {
         self.http.deinit();
-        self.context.deinit(self.gpa.allocator());
+        self.env.deinit();
         self.arena.deinit();
         _ = self.gpa.deinit();
     }
 
-    fn initFailed(arena: Allocator, http: ?*HttpClient, err: anyerror, message: []const u8) void {
-        logError("[Init] {s}: {s}", .{ message, @errorName(err) });
-        const h2p = http orelse return;
+    fn initFailed(arena: Allocator, http: ?*HttpClient, err: anyerror, message: []const u8) anyerror {
+        log.err("[Init] {s}: {s}", .{ message, @errorName(err) });
+        const h2p = http orelse return err;
 
         const request = api.ErrorRequest{
             .type = err,
@@ -62,47 +74,49 @@ pub const Server = struct {
         };
 
         const result = api.sendInitFail(arena, h2p, request) catch |e| {
-            logError("Sending the initialization’s error report failed: {s}", .{@errorName(e)});
-            return;
+            log.err("Sending the initialization’s error report failed: {s}", .{@errorName(e)});
+            return err; // Intentional `err` instead of `e`
         };
 
         switch (result) {
             .accepted => {},
             .forbidden => |e| {
-                logError("Sending the initialization’s error report failed: {s}.\n{s}", .{ e.type, e.message });
+                log.err("Sending the initialization’s error report failed: {s}.\n{s}", .{ e.type, e.message });
             },
         }
+
+        return err;
     }
 
     /// Event loop – request and invocate events sequentially.
-    pub fn listen(self: *Server, processor: ProcessorFn) void {
+    pub fn listen(self: *Server, processorFn: ProcessorFn) void {
+        var context = ctx.Context{
+            .gpa = self.gpa.allocator(),
+            .arena = self.arena.allocator(),
+        };
+        ctx.loadMeta(&context, &self.env);
+
         while (true) {
             // Request the next event
             const next = api.sendInvocationNext(self.arena.allocator(), &self.http) catch |err| {
-                logError("Requesting the next invocation failed: {s}", .{@errorName(err)});
+                log.err("Requesting the next invocation failed: {s}", .{@errorName(err)});
                 return;
             };
 
             // Handle the event
             switch (next) {
-                // Failed retrieving the event
                 .forbidden => |err| {
-                    logError("Requesting the next invocation failed: {s}.\n{s}", .{ err.type, err.message });
+                    // Failed retrieving the event
+                    log.err("Requesting the next invocation failed: {s}.\n{s}", .{ err.type, err.message });
                 },
-
-                // Process the event
                 .success => |event| {
-                    // Set up the event’s context
-                    const ctx = &self.context;
-                    ctx.request_id = event.request_id;
-                    ctx.invoked_arn = event.invoked_arn;
-                    ctx.deadline_ms = event.deadline_ms;
-                    ctx.client_context = event.client_context;
-                    ctx.cognito_identity = event.cognito_identity;
-                    ctx.xray_trace = event.xray_trace;
-                    defer ctx.xray_trace = &[_]u8{};
+                    // Update event-specific metadata
+                    self.request_id = event.request_id;
+                    ctx.updateMeta(&context, event);
+                    defer context.request.xray_trace = "";
 
-                    if (processor(self, event.payload) == .abort) return;
+                    // Process the event
+                    if (processorFn(self, context, event.payload) == .abort) return;
                 },
             }
 
@@ -113,9 +127,9 @@ pub const Server = struct {
 
     pub fn respondFailure(self: *Server, err: anyerror, trace: ?*std.builtin.StackTrace) !void {
         if (trace) |t| {
-            logError("The handler returned an error `{s}`.{?}", .{ @errorName(err), t });
+            log.err("The handler returned an error `{s}`.{?}", .{ @errorName(err), t });
         } else {
-            logError("The handler returned an error `{s}`.", .{@errorName(err)});
+            log.err("The handler returned an error `{s}`.", .{@errorName(err)});
         }
 
         const request = api.ErrorRequest{
@@ -123,54 +137,42 @@ pub const Server = struct {
             .message = "The handler returned an error response.",
         };
 
-        const result = api.sendInvocationFail(
-            self.arena.allocator(),
-            &self.http,
-            self.context.request_id,
-            request,
-        ) catch |e| {
+        const alloc = self.arena.allocator();
+        const result = api.sendInvocationFail(alloc, &self.http, self.request_id, request) catch |e| {
             return logErrorName("Sending the invocation’s error report failed: {s}", e);
         };
 
         switch (result) {
             .accepted => {},
             .bad_request, .forbidden => |e| {
-                logError("Sending the invocation’s error report failed: {s}.\n{s}", .{ e.type, e.message });
+                log.err("Sending the invocation’s error report failed: {s}.\n{s}", .{ e.type, e.message });
             },
         }
     }
 
     pub fn respondSuccess(self: *Server, output: []const u8) !void {
-        const result = api.sendInvocationSuccess(
-            self.arena.allocator(),
-            &self.http,
-            self.context.request_id,
-            output,
-        ) catch |err| {
+        const alloc = self.arena.allocator();
+        const result = api.sendInvocationSuccess(alloc, &self.http, self.request_id, output) catch |err| {
             return logErrorName("Sending the invocation’s output failed: {s}", err);
         };
 
         switch (result) {
             .accepted => {},
             .bad_request, .forbidden, .payload_too_large => |err| {
-                logError("Sending the invocation response failed: {s}.\n{s}", .{ err.type, err.message });
+                log.err("Sending the invocation response failed: {s}.\n{s}", .{ err.type, err.message });
             },
         }
     }
 
     pub fn streamSuccess(self: *Server, content_type: []const u8) !Stream {
-        const request = api.streamInvocationOpen(
-            self.arena.allocator(),
-            &self.http,
-            self.context.request_id,
-            content_type,
-        ) catch |err| {
+        const alloc = self.arena.allocator();
+        const request = api.streamInvocationOpen(alloc, &self.http, self.request_id, content_type) catch |err| {
             return logErrorName("Opening a stream failed: {s}", err);
         };
 
         return .{
             .req = request,
-            .arena = self.arena.allocator(),
+            .arena = alloc,
         };
     }
 
@@ -207,18 +209,14 @@ pub const Server = struct {
             switch (result) {
                 .accepted => {},
                 .bad_request, .forbidden, .payload_too_large => |e| {
-                    logError("Closing the stream failed: {s}.\n{s}", .{ e.type, e.message });
+                    log.err("Closing the stream failed: {s}.\n{s}", .{ e.type, e.message });
                 },
             }
         }
     };
 };
 
-fn logError(comptime format: []const u8, args: anytype) void {
-    lambda.log_runtime.err(format, args);
-}
-
 fn logErrorName(comptime format: []const u8, err: anyerror) anyerror {
-    lambda.log_runtime.err(format, .{@errorName(err)});
+    log.err(format, .{@errorName(err)});
     return err;
 }

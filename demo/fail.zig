@@ -7,6 +7,6 @@ pub fn main() void {
     lambda.handle(handler, .{});
 }
 
-noinline fn handler(_: lambda.Allocators, _: lambda.Context, _: []const u8) ![]const u8 {
+noinline fn handler(_: lambda.Context, _: []const u8) ![]const u8 {
     return error.KaBoOoOm;
 }
