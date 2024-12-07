@@ -38,7 +38,7 @@ Minimal [Hello World demo](#hello-world) on _`arm64` (256 MiB, Amazon Linux 2023
 ## Quick Start
 1. Add a dependency to your project:
     ```console
-    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.1.2
+    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.2.0
     ```
 2. Configure the [executable build](#build-script):
     - Named the executable _bootstrap_.
