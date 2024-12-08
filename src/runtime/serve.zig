@@ -6,7 +6,7 @@ const HttpClient = @import("../utils/Http.zig");
 const environ = @import("../utils/environ.zig");
 const log = @import("../utils/log.zig").runtime;
 
-pub const ServerOptions = struct {};
+pub const Options = struct {};
 
 pub const ProcessorFn = *const fn (
     server: *Server,
@@ -28,7 +28,7 @@ pub const Server = struct {
     env: std.process.EnvMap,
     request_id: []const u8 = "",
 
-    pub fn init(self: *Server, _: ServerOptions) !void {
+    pub fn init(self: *Server, _: Options) !void {
         errdefer self.* = undefined;
 
         self.gpa = std.heap.GeneralPurposeAllocator(.{}){};

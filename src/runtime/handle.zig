@@ -1,13 +1,15 @@
 const std = @import("std");
+const log = @import("../utils/log.zig").runtime;
 const srv = @import("serve.zig");
 const Server = srv.Server;
-const Context = @import("context.zig").Context;
-const log = @import("../utils/log.zig").runtime;
+pub const Options = srv.Options;
+pub const Context = @import("context.zig").Context;
 
-const HandlerFn = *const fn (context: Context, event: []const u8) anyerror![]const u8;
-const StreamHandlerFn = *const fn (context: Context, event: []const u8, stream: Stream) anyerror!void;
+const AsyncHandlerFn = *const fn (context: Context, event: []const u8) anyerror!void;
+const SyncHandlerFn = *const fn (context: Context, event: []const u8) anyerror![]const u8;
+const StreamingHandlerFn = *const fn (context: Context, event: []const u8, stream: Stream) anyerror!void;
 
-fn serve(options: srv.ServerOptions, processor: srv.ProcessorFn) void {
+fn serve(options: srv.Options, processorFn: srv.ProcessorFn) void {
     // Initialize the server.
     // If it fails we can return since the server already logged the error.
     var server: Server = undefined;
@@ -15,16 +17,15 @@ fn serve(options: srv.ServerOptions, processor: srv.ProcessorFn) void {
 
     // Run the event loop until an error occurs or the process is terminated.
     defer server.deinit();
-    server.listen(processor);
+    server.listen(processorFn);
 }
 
-/// The entry point for an AWS Lambda function.
-///
-/// Accepts a const reference to a handler function that will process each event separetly.
-pub fn handleBuffered(comptime handler: HandlerFn, options: srv.ServerOptions) void {
+/// The entry point for a synchronous AWS Lambda function.
+/// Accepts a handler function that will process each event separetly.
+pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: srv.Options) void {
     serve(options, struct {
         fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
-            if (handler(context, event)) |output| {
+            if (handlerFn(context, event)) |output| {
                 server.respondSuccess(output) catch return .abort;
             } else |e| {
                 server.respondFailure(e, @errorReturnTrace()) catch return .abort;
@@ -35,16 +36,31 @@ pub fn handleBuffered(comptime handler: HandlerFn, options: srv.ServerOptions) v
     }.f);
 }
 
-/// The entry point for a streaming AWS Lambda function.
-///
-/// Accepts a const reference to a streaming handler function that will process each event separetly.
-pub fn handleStreaming(comptime handler: StreamHandlerFn, options: srv.ServerOptions) void {
+/// The entry point for an asynchronous AWS Lambda function.
+/// Accepts a handler function that will process each event separetly.
+pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: srv.Options) void {
+    serve(options, struct {
+        fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
+            if (handlerFn(context, event)) {
+                server.respondSuccess("") catch return .abort;
+            } else |e| {
+                server.respondFailure(e, @errorReturnTrace()) catch return .abort;
+            }
+
+            return .success;
+        }
+    }.f);
+}
+
+/// The entry point for a response streaming AWS Lambda function.
+/// Accepts a streaming handler function that will process each event separetly.
+pub fn handleStreaming(comptime handlerFn: StreamingHandlerFn, options: srv.Options) void {
     serve(options, struct {
         fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
             var stream: Server.Stream = undefined;
             var stream_ctx: StreamingContext = .{};
 
-            handler(context, event, .{
+            handlerFn(context, event, .{
                 .server = server,
                 .stream = &stream,
                 .context = &stream_ctx,

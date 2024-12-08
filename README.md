@@ -23,7 +23,7 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 
 ### Benchmark
 Using zig allows creating small and fast functions.<br />
-Minimal [Hello World demo](#hello-world) (_arm64_ 256 MiB, Amazon Linux 2023):
+Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
 
 - ❄️ `~13ms` cold start invocation duration
 - ⚡ `~1.5ms` warm invocation duration
@@ -36,16 +36,13 @@ Minimal [Hello World demo](#hello-world) (_arm64_ 256 MiB, Amazon Linux 2023):
 > comprehensive Zig-based AWS cloud solution.
 
 ## Quick Start
-1. Add a dependency to your project:
+1. Add a dependency to your project (replace `VERSION` with the desired version tag):
     ```console
-    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#0.2.1
+    zig fetch --save git+https://github.com/by-nir/aws-lambda-zig#VERSION
     ```
-2. Configure the [executable build](#build-script):
-    - Named the executable _bootstrap_.
-    - Import the Lambda Runtime module.
-3. Implement a handler (exmaples: [minimal handler](#minimal-handler), [streaming handler](#streaming-handler)).
-4. Build the handler executable for _Linux_ with either _x86_ or _arm_ architecture.<br />
-    If you used the library provided [managed architecture target](#build-target) utility, specify the architecture:
+2. Configure the build script.
+3. Implement a handler function (either an event handler or a streaming handler).
+4. Build a handler executable for the preferred target architecture:
     ```console
     zig build --release -Darch=x86
     zig build --release -Darch=arm
@@ -58,21 +55,18 @@ Minimal [Hello World demo](#hello-world) (_arm64_ 256 MiB, Amazon Linux 2023):
     - Configure it with _Amazon Linux 2023_ or other **OS-only runtime**.
     - Use you prefered deployment method: console, CLI, SAM or any CI solution.
 
-### Build Script
+### Example Build Script
 ```zig
 const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn build(b: *std.Build) void {
-    // Add an architecture confuration option and resolves a target query.
-    const target = lambda.resolveTargetQuery(b, lambda.archOption(b));
-    
-    // Alternatively, hard-code an architecture.
-    // const target = lambda.resolveTargetQuery(b, .arm);
-
     const optimize = b.standardOptimizeOption(.{
         .preferred_optimize_mode = .ReleaseFast,
     });
+
+    // Add an architecture confuration option and resolves a target query.
+    const target = lambda.resolveTargetQuery(b, lambda.archOption(b));
 
     // Add the handler executable.
     const exe = b.addExecutable(.{
@@ -90,7 +84,7 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-### Minimal Handler
+### Example Event Handler
 ```zig
 const lambda = @import("aws-lambda");
 
@@ -110,72 +104,53 @@ fn handler(
 }
 ```
 
-### Streaming Handler
-```zig
-const lambda = @import("aws-lambda");
-
-// Entry point for the Lambda function.
-pub fn main() void {
-    // Bind the handler to the runtime:
-    lambda.handleStream(handler, .{});
-}
-
-// Eeach event is processed separetly the handler function.
-// The function must have the following signature:
-fn handler(
-    ctx: lambda.Context,    // Metadata and utilities
-    event: []const u8,      // Raw event payload (JSON)
-    stream: lambda.Stream,  // Response stream
-) !void {
-    // Start streaming the response for a given content type.
-    try stream.open("text/event-stream");
-
-    // Append to the streaming buffer.
-    try stream.write("data: Message");
-    try stream.writeFmt(" number {d}\n\n", .{1});
-
-    // Publish the buffer to the client.
-    try stream.flush();
-
-    // Wait for half a second.
-    std.time.sleep(500_000_000);
-
-    // Append to streaming buffer and immediatly publish to the client.
-    try stream.publish("data: Message number 2\n\n");
-    std.time.sleep(100_000_000);
-
-    // Publish also supports formatting.
-    try stream.publishFmt("data: Message number {d}\n\n", .{3});
-
-    // Optionally close the stream.
-    try stream.close();
-}
-```
-
 ## Documentation
 
-### Build Target
-AWS Lambda provides two architectures for the runtime environment: _x86_64_ and _arm64_ based on _Graviton2_. In order to build the event handler correctly and to squeeze the best performance, the build target must be configured accordingly.
+### Build
+This library provides a runtime module that handles the Lambda lifecycle and communication with the execution environment.
+To use it, follow the following requirements:
+    - Import the Lambda Runtime module this library provides and wrap a handler function with it.
+    - Build an executable named _bootstrap_ and archive it in a Zip file.
+    - Use _Amazon Linux 2023_ or any other supported OS-only runtime.
 
-The mananged target resolver sets the operating system, architecture and specific CPU supported features. It can be utilizes in the build script in two forms:
+#### Managed Target
+AWS Lambda supports two architectures: _x86_64_ and _arm64_ based on _Graviton2_. In order to build the event handler correctly and to squeeze the best performance, the build target must be configured accordingly.
 
+The mananged target resolver sets the optimal operating system, architecture and specific CPU supported features. Call `lambda.resolveTargetQuery(*std.Build, arch)` to resolve the target for the given architecture (either `.x86` or `.arm`).
+
+To add a CLI configuration option call `lambda.archOption(*std.Build)` the following and pass the result to `lambda.resolveTargetQuery`.
+It can then by set through `-Darch=x86` or `-Darch=arm` (defaults to _x86_ when to manualy used).
+
+#### Example Build Script
 ```zig
 const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn build(b: *std.Build) void {
-    // Option A – CLI confuration:
-    const arch = lambda.archOption(b);
-    const target = lambda.resolveTargetQuery(b, arch);
-    
-    // Option B – Hard-coded architecture (`.x86` or `.arm`):
-    const target = lambda.resolveTargetQuery(b, .arm);
+    const optimize = b.standardOptimizeOption(.{
+        .preferred_optimize_mode = .ReleaseFast,
+    });
 
-    // ···
+    // Add an architecture CLI option (or hard code either `.x86` or `.arm`)
+    const arch: lambda.Arch = lambda.archOption(b); 
+
+    // Managed architecture target resolver
+    const target = lambda.resolveTargetQuery(b, arch);
+
+    // Add the handler’s executable
+    const exe = b.addExecutable(.{
+        .name = "bootstrap", // The executable name must be "bootstrap"!
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    b.installArtifact(exe);
+
+    // Import the runtime module
+    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
+    exe.root_module.addImport("aws-lambda", runtime);
 }
 ```
-
-If `lambda.archOption(b)` is used, the configuration option `-Darch=x86|arm` is added (defaults to _x86_).
 
 ### Event Handler
 The event handler is the entry point for the Lambda function.
@@ -188,22 +163,31 @@ Since the library manages the lifecycle, it expects the handler to have a specif
 const lambda = @import("aws-lambda");
 
 // Entry point for the Lambda function.
+// Eeach event is processed separetly the handler function.
 pub fn main() void {
     // Bind the handler to the runtime:
-    lambda.handle(handler, .{});
+    lambda.handle(handlerSync, .{});
+
+    // Alternatively, for asynchronous handlers:
+    // lambda.handleAsync(handlerAsync, .{});
 }
 
-// Eeach event is processed separetly the handler function.
-// The function must have the following signature:
-fn handler(
+fn handlerSync(
     ctx: lambda.Context,    // Metadata and utilities
     event: []const u8,      // Raw event payload (JSON)
 ) ![]const u8 {
-    // The handler’s implement should process the `event` payload and return a response payload.
+    // Process the `event` payload and return a response payload.
     return switch(payload.len) {
         0 => "Empty payload.",
-        else => payload,
+        else => event,
     };
+}
+
+fn handlerAsync(
+    ctx: lambda.Context,    // Metadata and utilities
+    event: []const u8,      // Raw event payload (JSON)
+) !void {
+    // Process the `event` payload...
 }
 ```
 
@@ -295,8 +279,25 @@ fn handler(
     // Start streaming the response for a given content type.
     try stream.open("text/event-stream");
 
-    // Publish a message to the client.
-    try stream.publish("data: Hello, world!\n\n");    
+    // Append to the streaming buffer.
+    try stream.write("data: Message");
+    try stream.writeFmt(" number {d}\n\n", .{1});
+
+    // Publish the buffer to the client.
+    try stream.flush();
+
+    // Wait for half a second.
+    std.time.sleep(500_000_000);
+
+    // Append to streaming buffer and immediatly publish to the client.
+    try stream.publish("data: Message number 2\n\n");
+    std.time.sleep(100_000_000);
+
+    // Publish also supports formatting.
+    try stream.publishFmt("data: Message number {d}\n\n", .{3});
+
+    // Optionally close the stream.
+    try stream.close();
 }
 ```
 
