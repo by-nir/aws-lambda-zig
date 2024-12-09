@@ -6,13 +6,7 @@ const HttpClient = @import("../utils/Http.zig");
 const environ = @import("../utils/environ.zig");
 const log = @import("../utils/log.zig").runtime;
 
-pub const Options = struct {};
-
-pub const ProcessorFn = *const fn (
-    server: *Server,
-    context: ctx.Context,
-    event: []const u8,
-) InvocationResult;
+pub const ProcessorFn = *const fn (server: *Server, ctx: ctx.Context, event: []const u8) InvocationResult;
 
 pub const InvocationResult = enum {
     /// The runtime may process another event.
@@ -20,6 +14,8 @@ pub const InvocationResult = enum {
     /// The runtime should terminate the lambda instance.
     abort,
 };
+
+pub const Options = struct {};
 
 pub const Server = struct {
     gpa: std.heap.GeneralPurposeAllocator(.{}),

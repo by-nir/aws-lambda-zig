@@ -5,9 +5,9 @@ const Server = srv.Server;
 pub const Options = srv.Options;
 pub const Context = @import("context.zig").Context;
 
-const AsyncHandlerFn = *const fn (context: Context, event: []const u8) anyerror!void;
-const SyncHandlerFn = *const fn (context: Context, event: []const u8) anyerror![]const u8;
-const StreamingHandlerFn = *const fn (context: Context, event: []const u8, stream: Stream) anyerror!void;
+const AsyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror!void;
+const SyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror![]const u8;
+const StreamingHandlerFn = fn (ctx: Context, event: []const u8, stream: Stream) anyerror!void;
 
 fn serve(options: srv.Options, processorFn: srv.ProcessorFn) void {
     // Initialize the server.
@@ -24,8 +24,8 @@ fn serve(options: srv.Options, processorFn: srv.ProcessorFn) void {
 /// Accepts a handler function that will process each event separetly.
 pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: srv.Options) void {
     serve(options, struct {
-        fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
-            if (handlerFn(context, event)) |output| {
+        fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
+            if (handlerFn(ctx, event)) |output| {
                 server.respondSuccess(output) catch return .abort;
             } else |e| {
                 server.respondFailure(e, @errorReturnTrace()) catch return .abort;
@@ -40,8 +40,8 @@ pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: srv.Options) void 
 /// Accepts a handler function that will process each event separetly.
 pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: srv.Options) void {
     serve(options, struct {
-        fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
-            if (handlerFn(context, event)) {
+        fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
+            if (handlerFn(ctx, event)) {
                 server.respondSuccess("") catch return .abort;
             } else |e| {
                 server.respondFailure(e, @errorReturnTrace()) catch return .abort;
@@ -56,11 +56,11 @@ pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: srv.Options) voi
 /// Accepts a streaming handler function that will process each event separetly.
 pub fn handleStreaming(comptime handlerFn: StreamingHandlerFn, options: srv.Options) void {
     serve(options, struct {
-        fn f(server: *Server, context: Context, event: []const u8) srv.InvocationResult {
+        fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             var stream: Server.Stream = undefined;
             var stream_ctx: StreamingContext = .{};
 
-            handlerFn(context, event, .{
+            handlerFn(ctx, event, .{
                 .server = server,
                 .stream = &stream,
                 .context = &stream_ctx,
