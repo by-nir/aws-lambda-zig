@@ -36,9 +36,16 @@ test nextExpectErr {
     try testing.expectError(error.Fail, nextExpectErr(&scanner, .null, error.Fail));
 }
 
-pub fn nextString(scanner: *Scanner) ![]const u8 {
-    return switch (try scanner.next()) {
-        .string => |s| s,
+/// If passed an allocator, the string will be allocated.
+/// Otherwise, returns `error.InvalidInput` if the value is escaped.
+pub fn nextString(scanner: *Scanner, allocator: ?Allocator) ![]const u8 {
+    const next = if (allocator) |alloc|
+        try scanner.nextAlloc(alloc, .alloc_always)
+    else
+        try scanner.next();
+
+    return switch (next) {
+        .string, .allocated_string => |s| s,
         else => inputError(),
     };
 }
@@ -46,45 +53,75 @@ pub fn nextString(scanner: *Scanner) ![]const u8 {
 test nextString {
     var scanner = Scanner.initCompleteInput(test_alloc, "\"foo\"");
     defer scanner.deinit();
-    try testing.expectEqualStrings("foo", try nextString(&scanner));
+    try testing.expectEqualStrings("foo", try nextString(&scanner, null));
+
+    scanner.deinit();
+    scanner = Scanner.initCompleteInput(test_alloc, "\"f\\\"o\\\"o\"");
+    try testing.expectError(Error.InvalidInput, nextString(&scanner, null));
+
+    scanner.deinit();
+    scanner = Scanner.initCompleteInput(test_alloc, "\"f\\\"o\\\"o\"");
+    const escaped = try nextString(&scanner, test_alloc);
+    defer test_alloc.free(escaped);
+    try testing.expectEqualStrings("f\"o\"o", escaped);
 
     scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc, "null");
-    try testing.expectError(Error.InvalidInput, nextString(&scanner));
+    try testing.expectError(Error.InvalidInput, nextString(&scanner, null));
 }
 
-pub fn nextStringOptional(scanner: *Scanner) !?[]const u8 {
-    return switch (try scanner.next()) {
+/// If passed an allocator, the string will be allocated.
+/// Otherwise, returns `error.InvalidInput` if the value is escaped.
+pub fn nextStringOptional(scanner: *Scanner, allocator: ?Allocator) !?[]const u8 {
+    const next = if (allocator) |alloc|
+        try scanner.nextAlloc(alloc, .alloc_always)
+    else
+        try scanner.next();
+
+    return switch (next) {
         .null => null,
-        .string => |s| if (s.len > 0) s else null,
+        .string, .allocated_string => |s| if (s.len > 0) s else null,
         else => inputError(),
     };
 }
 
 test nextStringOptional {
-    var scanner = Scanner.initCompleteInput(test_alloc, "\"foo\"");
+    var scanner = Scanner.initCompleteInput(test_alloc, "\"\"");
     defer scanner.deinit();
-    try testing.expectEqualDeep("foo", try nextStringOptional(&scanner));
-
-    scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc, "\"\"");
-    try testing.expectEqual(null, try nextStringOptional(&scanner));
+    try testing.expectEqual(null, try nextStringOptional(&scanner, null));
 
     scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc, "null");
-    try testing.expectEqual(null, try nextStringOptional(&scanner));
+    try testing.expectEqual(null, try nextStringOptional(&scanner, null));
+
+    scanner.deinit();
+    scanner = Scanner.initCompleteInput(test_alloc, "\"foo\"");
+    try testing.expectEqualDeep("foo", try nextStringOptional(&scanner, null));
+
+    scanner.deinit();
+    scanner = Scanner.initCompleteInput(test_alloc, "\"f\\\"o\\\"o\"");
+    try testing.expectError(Error.InvalidInput, nextStringOptional(&scanner, null));
+
+    scanner.deinit();
+    scanner = Scanner.initCompleteInput(test_alloc, "\"f\\\"o\\\"o\"");
+    const escaped = try nextStringOptional(&scanner, test_alloc);
+    defer test_alloc.free(escaped.?);
+    try testing.expectEqualDeep("f\"o\"o", escaped);
 
     scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc, "108");
-    try testing.expectError(Error.InvalidInput, nextStringOptional(&scanner));
+    try testing.expectError(Error.InvalidInput, nextStringOptional(&scanner, null));
 }
 
+/// Assumes expected string does not require escaping.
 pub fn nextStringEqual(scanner: *Scanner, expected: []const u8) !void {
     try nextStringEqualErr(scanner, expected, Error.InvalidInput);
 }
 
+/// Assumes expected string does not require escaping.
 pub fn nextStringEqualErr(scanner: *Scanner, expected: []const u8, err: anyerror) !void {
-    if (!std.mem.eql(u8, expected, try nextString(scanner))) {
+    if (!std.mem.eql(u8, expected, try nextString(scanner, null))) {
         @branchHint(.cold);
         return err;
     }
@@ -202,29 +239,61 @@ test ArrayIterator {
 }
 
 pub const ObjectIterator = struct {
+    allocator: Allocator,
     scanner: *Scanner,
     done: bool = false,
+    prev_alloc: ?[]const u8 = null,
 
-    pub fn begin(scanner: *Scanner) !@This() {
+    pub fn init(allocator: Allocator, scanner: *Scanner) !@This() {
         try nextExpect(scanner, .object_begin);
-        return .{ .scanner = scanner };
+        return .{
+            .allocator = allocator,
+            .scanner = scanner,
+        };
+    }
+
+    /// Only required to call if deinit before exhausted.
+    /// Safe to call after exhausted.
+    pub fn deinit(self: *@This()) void {
+        self.freePrev();
     }
 
     pub fn next(self: *@This()) !?[]const u8 {
+        return self.nextInternal(false);
+    }
+
+    pub fn nextAlloc(self: *@This()) !?[]const u8 {
+        return self.nextInternal(true);
+    }
+
+    fn nextInternal(self: *@This(), comptime alloc: bool) !?[]const u8 {
+        // If the previous key was allocated, free it.
+        self.freePrev();
+
         if (self.done) {
             @branchHint(.cold);
             return null;
-        } else switch (try self.scanner.next()) {
-            .object_end => {
-                self.done = true;
-                return null;
-            },
-            .string => |key| {
-                @branchHint(.likely);
-                return key;
-            },
-            else => unreachable,
+        } else {
+            const when: std.json.AllocWhen = if (alloc) .alloc_always else .alloc_if_needed;
+            switch (try self.scanner.nextAlloc(self.allocator, when)) {
+                .object_end => {
+                    self.done = true;
+                    return null;
+                },
+                .string => |key| if (!alloc) return key else unreachable,
+                .allocated_string => |key| {
+                    if (!alloc) self.prev_alloc = key;
+                    return key;
+                },
+                else => unreachable,
+            }
         }
+    }
+
+    fn freePrev(self: *@This()) void {
+        const str = self.prev_alloc orelse return;
+        self.allocator.free(str);
+        self.prev_alloc = null;
     }
 };
 
@@ -237,7 +306,8 @@ test ObjectIterator {
     );
     defer scanner.deinit();
 
-    var it = try ObjectIterator.begin(&scanner);
+    var it = try ObjectIterator.init(test_alloc, &scanner);
+    errdefer it.deinit();
     try testing.expectEqualDeep("foo", try it.next());
     try scanner.skipValue();
     try testing.expectEqualDeep("bar", try it.next());
@@ -247,7 +317,7 @@ test ObjectIterator {
 
     scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc, "null");
-    try testing.expectError(Error.InvalidInput, ObjectIterator.begin(&scanner));
+    try testing.expectError(Error.InvalidInput, ObjectIterator.init(test_alloc, &scanner));
 }
 
 pub const Union = struct {
@@ -258,7 +328,7 @@ pub const Union = struct {
         try nextExpect(scanner, .object_begin);
         return .{
             .scanner = scanner,
-            .key = try nextString(scanner),
+            .key = try nextString(scanner, null),
         };
     }
 
@@ -302,18 +372,28 @@ test Union {
     try testing.expectError(Error.InvalidInput, Union.begin(&scanner));
 }
 
+/// Call `freeKeyValList` to free the list and its KV pairs.
 pub fn nextKeyValList(allocator: Allocator, scanner: *Scanner, delimeter: []const u8) ![]const KeyVal {
     var list = std.ArrayList(KeyVal).init(allocator);
-    errdefer list.deinit();
+    errdefer {
+        for (list.items) |kv| kv.deinitSplitted(allocator);
+        list.deinit();
+    }
 
     var it = try ArrayIterator.begin(scanner);
     while (try it.next()) {
-        const concat = try nextString(scanner);
+        const concat = try nextString(scanner, allocator);
+        errdefer allocator.free(concat);
         const kv = KeyVal.split(concat, delimeter) orelse return inputError();
         try list.append(kv);
     }
 
     return list.toOwnedSlice();
+}
+
+pub fn freeKeyValList(allocator: Allocator, list: []const KeyVal) void {
+    for (list) |kv| kv.deinitSplitted(allocator);
+    allocator.free(list);
 }
 
 test nextKeyValList {
@@ -326,7 +406,7 @@ test nextKeyValList {
     defer scanner.deinit();
 
     const list = try nextKeyValList(test_alloc, &scanner, ":");
-    defer test_alloc.free(list);
+    defer freeKeyValList(test_alloc, list);
     try testing.expectEqualDeep(&[_]KeyVal{ .{
         .key = "foo",
         .value = "bar",
@@ -346,19 +426,31 @@ test nextKeyValList {
     try testing.expectError(Error.InvalidInput, nextKeyValList(test_alloc, &scanner, ":"));
 }
 
+/// Call `freeKeyValMap` to free the list and its KV pairs.
 pub fn nextKeyValMap(allocator: Allocator, scanner: *Scanner) ![]const KeyVal {
     var list = std.ArrayList(KeyVal).init(allocator);
-    errdefer list.deinit();
+    errdefer {
+        for (list.items) |kv| kv.deinit(allocator);
+        list.deinit();
+    }
 
-    var it = try ObjectIterator.begin(scanner);
-    while (try it.next()) |key| {
-        try list.append(.{
+    var it = try ObjectIterator.init(allocator, scanner);
+    errdefer it.deinit();
+    while (try it.nextAlloc()) |key| {
+        const kv = KeyVal{
             .key = key,
-            .value = try nextString(scanner),
-        });
+            .value = try nextString(scanner, allocator),
+        };
+        errdefer kv.deinit(allocator);
+        try list.append(kv);
     }
 
     return list.toOwnedSlice();
+}
+
+pub fn freeKeyValMap(allocator: Allocator, list: []const KeyVal) void {
+    for (list) |kv| kv.deinit(allocator);
+    allocator.free(list);
 }
 
 test nextKeyValMap {
@@ -371,7 +463,7 @@ test nextKeyValMap {
     defer scanner.deinit();
 
     const list = try nextKeyValMap(test_alloc, &scanner);
-    defer test_alloc.free(list);
+    defer freeKeyValMap(test_alloc, list);
     try testing.expectEqualDeep(&[_]KeyVal{ .{
         .key = "foo",
         .value = "bar",

@@ -9,6 +9,35 @@ const KeyVal = @This();
 key: []const u8,
 value: []const u8,
 
+pub fn join(self: KeyVal, allocator: Allocator, delimeter: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ self.key, delimeter, self.value });
+}
+
+test join {
+    const kv = KeyVal{
+        .key = "foo",
+        .value = "bar",
+    };
+
+    const concat = try kv.join(test_alloc, "=");
+    defer test_alloc.free(concat);
+
+    try testing.expectEqualStrings("foo=bar", concat);
+}
+
+pub fn deinit(self: KeyVal, allocator: Allocator) void {
+    allocator.free(self.key);
+    allocator.free(self.value);
+}
+
+test deinit {
+    const kv = KeyVal{
+        .key = try test_alloc.dupe(u8, "foo"),
+        .value = try test_alloc.dupe(u8, "bar"),
+    };
+    kv.deinit(test_alloc);
+}
+
 pub fn split(string: []const u8, delimeter: []const u8) ?KeyVal {
     const index = mem.indexOf(u8, string, delimeter) orelse return null;
     const skip = index + delimeter.len;
@@ -32,18 +61,18 @@ test split {
     }, split("foo::bar", "::"));
 }
 
-pub fn join(self: KeyVal, allocator: Allocator, delimeter: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ self.key, delimeter, self.value });
+pub fn deinitSplitted(self: KeyVal, allocator: Allocator) void {
+    const start = self.key.ptr;
+    const len = (self.value.ptr + self.value.len) - start;
+    const slice = start[0..][0..len];
+    allocator.free(slice);
 }
 
-test join {
+test deinitSplitted {
+    const concat = try test_alloc.dupe(u8, "foo::bar");
     const kv = KeyVal{
-        .key = "foo",
-        .value = "bar",
+        .key = concat[0..3],
+        .value = concat[5..8],
     };
-
-    const concat = try kv.join(test_alloc, "=");
-    defer test_alloc.free(concat);
-
-    try testing.expectEqualStrings("foo=bar", concat);
+    kv.deinitSplitted(test_alloc);
 }

@@ -155,12 +155,13 @@ pub const Request = struct {
         var request = Request{};
         errdefer request.deinit(allocator);
 
-        var it = try json.ObjectIterator.begin(&scanner);
+        var it = try json.ObjectIterator.init(allocator, &scanner);
+        errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "rawPath", key)) {
-                request.raw_path = try json.nextStringOptional(&scanner);
+                request.raw_path = try json.nextStringOptional(&scanner, null);
             } else if (mem.eql(u8, "rawQueryString", key)) {
-                request.raw_query = try json.nextStringOptional(&scanner);
+                request.raw_query = try json.nextStringOptional(&scanner, null);
             } else if (mem.eql(u8, "cookies", key)) {
                 request.cookies = try json.nextKeyValList(allocator, &scanner, "=");
             } else if (mem.eql(u8, "headers", key)) {
@@ -168,11 +169,11 @@ pub const Request = struct {
             } else if (mem.eql(u8, "queryStringParameters", key)) {
                 request.query_parameters = try json.nextKeyValMap(allocator, &scanner);
             } else if (mem.eql(u8, "body", key)) {
-                request.body = try json.nextStringOptional(&scanner);
+                request.body = try json.nextStringOptional(&scanner, allocator);
             } else if (mem.eql(u8, "isBase64Encoded", key)) {
                 request.body_is_base64 = try json.nextBool(&scanner);
             } else if (mem.eql(u8, "requestContext", key)) {
-                request.request_context = try RequestContext.from(&scanner);
+                request.request_context = try RequestContext.init(allocator, &scanner);
             } else if (mem.eql(u8, "version", key)) {
                 try json.nextStringEqualErr(&scanner, "2.0", error.UnsupportedEventVersion);
             } else if (mem.eql(u8, "routeKey", key)) {
@@ -187,9 +188,11 @@ pub const Request = struct {
     }
 
     pub fn deinit(self: Request, allocator: Allocator) void {
-        allocator.free(self.cookies);
-        allocator.free(self.headers);
-        allocator.free(self.query_parameters);
+        json.freeKeyValList(allocator, self.cookies);
+        json.freeKeyValMap(allocator, self.headers);
+        json.freeKeyValMap(allocator, self.query_parameters);
+        if (self.body) |s| allocator.free(s);
+        self.request_context.deinit(allocator);
     }
 };
 
@@ -222,7 +225,7 @@ test Request {
         \\    "parameter1": "value1,value2",
         \\    "parameter2": "value"
         \\  },
-        \\  "body": "Hello from client!",
+        \\  "body": "Hello from \"foo\" client!",
         \\  "isBase64Encoded": false,
         \\  "requestContext": {
         \\    "timeEpoch": 1583348638390,
@@ -254,7 +257,7 @@ test Request {
             .{ .key = "parameter1", .value = "value1,value2" },
             .{ .key = "parameter2", .value = "value" },
         },
-        .body = "Hello from client!",
+        .body = "Hello from \"foo\" client!",
         .body_is_base64 = false,
         .request_context = RequestContext{
             .time_epoch = 1583348638390,
@@ -300,29 +303,30 @@ pub const RequestContext = struct {
     /// Otherwise, Lambda sets this to `.none`.
     authorizer: RequestAuthorizer = .none,
 
-    fn from(scanner: *Scanner) !RequestContext {
+    fn init(allocator: Allocator, scanner: *Scanner) !RequestContext {
         var context = RequestContext{};
 
-        var it = try json.ObjectIterator.begin(scanner);
+        var it = try json.ObjectIterator.init(allocator, scanner);
+        errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "accountId", key)) {
-                context.account_id = try json.nextStringOptional(scanner);
+                context.account_id = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "apiId", key)) {
-                context.api_id = try json.nextStringOptional(scanner);
+                context.api_id = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "domainName", key)) {
-                context.domain_name = try json.nextStringOptional(scanner);
+                context.domain_name = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "domainPrefix", key)) {
-                context.domain_prefix = try json.nextStringOptional(scanner);
+                context.domain_prefix = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "requestId", key)) {
-                context.request_id = try json.nextStringOptional(scanner);
+                context.request_id = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "time", key)) {
-                context.time = try json.nextStringOptional(scanner);
+                context.time = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "timeEpoch", key)) {
                 context.time_epoch = try json.nextNumber(scanner, i64);
             } else if (mem.eql(u8, "http", key)) {
-                context.http = try RequestHttp.from(scanner);
+                context.http = try RequestHttp.init(allocator, scanner);
             } else if (mem.eql(u8, "authorizer", key)) {
-                context.authorizer = try RequestAuthorizer.from(scanner);
+                context.authorizer = try RequestAuthorizer.from(allocator, scanner);
             } else if (mem.eql(u8, "routeKey", key)) {
                 try json.nextStringEqualErr(scanner, "$default", error.UnexpectedRouteKey);
             } else if (mem.eql(u8, "stage", key)) {
@@ -333,6 +337,10 @@ pub const RequestContext = struct {
         }
 
         return context;
+    }
+
+    fn deinit(self: RequestContext, allocator: Allocator) void {
+        self.http.deinit(allocator);
     }
 };
 
@@ -361,26 +369,26 @@ test RequestContext {
     );
     defer scanner.deinit();
 
-    try testing.expectEqualDeep(
-        RequestContext{
-            .account_id = "123456789012",
-            .api_id = "<urlid>",
-            .domain_name = "<url-id>.lambda-url.us-west-2.on.aws",
-            .domain_prefix = "<url-id>",
-            .request_id = "id",
-            .time = "12/Mar/2020:19:03:58 +0000",
-            .time_epoch = 1583348638390,
-            .http = .{
-                .path = "/my/path",
-            },
-            .authorizer = .{
-                .iam = .{
-                    .user_arn = "arn:aws:iam::111122223333:user/example-user",
-                },
+    const context = try RequestContext.init(test_alloc, &scanner);
+    defer context.deinit(test_alloc);
+
+    try testing.expectEqualDeep(RequestContext{
+        .account_id = "123456789012",
+        .api_id = "<urlid>",
+        .domain_name = "<url-id>.lambda-url.us-west-2.on.aws",
+        .domain_prefix = "<url-id>",
+        .request_id = "id",
+        .time = "12/Mar/2020:19:03:58 +0000",
+        .time_epoch = 1583348638390,
+        .http = .{
+            .path = "/my/path",
+        },
+        .authorizer = .{
+            .iam = .{
+                .user_arn = "arn:aws:iam::111122223333:user/example-user",
             },
         },
-        try RequestContext.from(&scanner),
-    );
+    }, context);
 }
 
 pub const RequestHttp = struct {
@@ -401,28 +409,33 @@ pub const RequestHttp = struct {
     /// The `User-Agent` request header value.
     user_agent: ?[]const u8 = null,
 
-    fn from(scanner: *Scanner) !RequestHttp {
+    fn init(allocator: Allocator, scanner: *Scanner) !RequestHttp {
         var http = RequestHttp{};
 
-        var it = try json.ObjectIterator.begin(scanner);
+        var it = try json.ObjectIterator.init(allocator, scanner);
+        errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "method", key)) {
-                const str = try json.nextStringOptional(scanner) orelse continue;
+                const str = try json.nextStringOptional(scanner, null) orelse continue;
                 http.method = @enumFromInt(std.http.Method.parse(str));
             } else if (mem.eql(u8, "path", key)) {
-                http.path = try json.nextStringOptional(scanner);
+                http.path = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "protocol", key)) {
-                http.protocol = try json.nextStringOptional(scanner);
+                http.protocol = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "sourceIp", key)) {
-                http.source_ip = try json.nextStringOptional(scanner);
+                http.source_ip = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "userAgent", key)) {
-                http.user_agent = try json.nextStringOptional(scanner);
+                http.user_agent = try json.nextStringOptional(scanner, allocator);
             } else {
                 try scanner.skipValue();
             }
         }
 
         return http;
+    }
+
+    fn deinit(self: RequestHttp, allocator: Allocator) void {
+        if (self.user_agent) |s| allocator.free(s);
     }
 };
 
@@ -433,35 +446,35 @@ test RequestHttp {
         \\  "path": "/my/path",
         \\  "protocol": "HTTP/1.1",
         \\  "sourceIp": "123.123.123.123",
-        \\  "userAgent": "agent"
+        \\  "userAgent": "agent \"foo\" bar"
         \\}
     );
     defer scanner.deinit();
 
-    try testing.expectEqualDeep(
-        RequestHttp{
-            .method = .POST,
-            .path = "/my/path",
-            .protocol = "HTTP/1.1",
-            .source_ip = "123.123.123.123",
-            .user_agent = "agent",
-        },
-        try RequestHttp.from(&scanner),
-    );
+    const http = try RequestHttp.init(test_alloc, &scanner);
+    defer http.deinit(test_alloc);
+
+    try testing.expectEqualDeep(RequestHttp{
+        .method = .POST,
+        .path = "/my/path",
+        .protocol = "HTTP/1.1",
+        .source_ip = "123.123.123.123",
+        .user_agent = "agent \"foo\" bar",
+    }, http);
 }
 
 pub const RequestAuthorizer = union(enum) {
     none: void,
     iam: RequestAuthorizerIam,
 
-    fn from(scanner: *Scanner) !RequestAuthorizer {
+    fn from(allocator: Allocator, scanner: *Scanner) !RequestAuthorizer {
         switch (try scanner.peekNextTokenType()) {
             .null => return .none,
             .object_begin => {
                 const u = try json.Union.begin(scanner);
                 if (mem.eql(u8, "iam", u.key)) {
                     const auth = RequestAuthorizer{
-                        .iam = try RequestAuthorizerIam.from(scanner),
+                        .iam = try RequestAuthorizerIam.from(allocator, scanner),
                     };
                     try u.endErr(error.UnexpectedAuthorizer);
                     return auth;
@@ -477,11 +490,11 @@ pub const RequestAuthorizer = union(enum) {
 test RequestAuthorizer {
     var scanner = Scanner.initCompleteInput(test_alloc, "null");
     defer scanner.deinit();
-    try testing.expectEqual(RequestAuthorizer.none, try RequestAuthorizer.from(&scanner));
+    try testing.expectEqual(RequestAuthorizer.none, try RequestAuthorizer.from(test_alloc, &scanner));
 
     scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc, "{\"foo\": \"bar\"}");
-    try testing.expectError(error.UnexpectedAuthorizer, RequestAuthorizer.from(&scanner));
+    try testing.expectError(error.UnexpectedAuthorizer, RequestAuthorizer.from(test_alloc, &scanner));
 
     scanner.deinit();
     scanner = Scanner.initCompleteInput(test_alloc,
@@ -493,7 +506,7 @@ test RequestAuthorizer {
         RequestAuthorizer{
             .iam = .{ .user_id = "AIDACOSFODNN7EXAMPLE2" },
         },
-        try RequestAuthorizer.from(&scanner),
+        try RequestAuthorizer.from(test_alloc, &scanner),
     );
 
     scanner.deinit();
@@ -503,7 +516,7 @@ test RequestAuthorizer {
         \\  "foo": "bar"
         \\}
     );
-    try testing.expectError(error.UnexpectedAuthorizer, RequestAuthorizer.from(&scanner));
+    try testing.expectError(error.UnexpectedAuthorizer, RequestAuthorizer.from(test_alloc, &scanner));
 }
 
 pub const RequestAuthorizerIam = struct {
@@ -525,23 +538,24 @@ pub const RequestAuthorizerIam = struct {
     /// The user ID of the caller identity.
     user_id: ?[]const u8 = null,
 
-    fn from(scanner: *Scanner) !RequestAuthorizerIam {
+    fn from(allocator: Allocator, scanner: *Scanner) !RequestAuthorizerIam {
         var iam = RequestAuthorizerIam{};
 
-        var it = try json.ObjectIterator.begin(scanner);
+        var it = try json.ObjectIterator.init(allocator, scanner);
+        errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "accessKey", key)) {
-                iam.access_key = try json.nextStringOptional(scanner);
+                iam.access_key = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "accountId", key)) {
-                iam.account_id = try json.nextStringOptional(scanner);
+                iam.account_id = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "callerId", key)) {
-                iam.caller_id = try json.nextStringOptional(scanner);
+                iam.caller_id = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "principalOrgId", key)) {
-                iam.principal_org_id = try json.nextStringOptional(scanner);
+                iam.principal_org_id = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "userArn", key)) {
-                iam.user_arn = try json.nextStringOptional(scanner);
+                iam.user_arn = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "userId", key)) {
-                iam.user_id = try json.nextStringOptional(scanner);
+                iam.user_id = try json.nextStringOptional(scanner, null);
             } else {
                 try scanner.skipValue();
             }
@@ -574,6 +588,6 @@ test RequestAuthorizerIam {
             .user_arn = "arn:aws:iam::111122223333:user/example-user",
             .user_id = "AIDACOSFODNN7EXAMPLE2",
         },
-        try RequestAuthorizerIam.from(&scanner),
+        try RequestAuthorizerIam.from(test_alloc, &scanner),
     );
 }
