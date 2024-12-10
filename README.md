@@ -12,7 +12,6 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 - [x] Runtime API
 - [ ] Extensions API
 - [ ] Telemetry API
-- [ ] Structured events
 - [x] Response streaming
 - [x] CloudWatch & X-Ray integration
 - [ ] Lifecycle hooks
@@ -20,6 +19,18 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 - [x] Build system target configuration
 - [ ] Managed build step
 - [ ] Testing utilities
+
+### Services Events
+_Feel free to open an issue for additional integrations, or better contribute a pull request._
+
+- [ ] Unified HTTP
+- [x] Lambda URLs
+- [ ] API Gateway
+- [ ] S3
+- [ ] SQS
+- [ ] SNS
+- [ ] DynamoDB
+- [ ] Data Firehose
 
 ### Benchmark
 Using zig allows creating small and fast functions.<br />
@@ -169,7 +180,7 @@ pub fn main() void {
     lambda.handle(handlerSync, .{});
 
     // Alternatively, for asynchronous handlers:
-    // lambda.handleAsync(handlerAsync, .{});
+    lambda.handleAsync(handlerAsync, .{});
 }
 
 fn handlerSync(
@@ -219,7 +230,7 @@ Since the runtime manages the function and invocation lifecycle, it also owns th
 | `ctx.arena` | The memory is tied to the invocation’s lifetime. The runtime will deallocate it on your behalf after the invocation resolves. |
 
 > [!NOTE]
-> While `ctx.gpa` may be used to persist data and services between invocations, for such cases consider using [dependency injection](#dependency-injection) or [extensions](#extensions--telemetry).
+> While `ctx.gpa` may be used to persist data and services between invocations, for such cases consider using [dependency injection](#dependency-injection) or [extensions](#extensions).
 
 #### Environment Variables
 The functions’ environment variables are mapped by the _handler context_, they can be accesed using the `env(key)` method:
@@ -319,16 +330,13 @@ _Closing the stream is not required._
 | `stream.publishFmt(format, args)` | Appends a message to the buffer using Zig’s standard formatting conventions, and **immediatly** publish it to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
 
-### Structured Events
-Not yet implemented.
-
 ### Lifecycle Hooks
 Not yet implemented.
 
 ### Dependency Injection
 Not yet implemented.
 
-### Extensions & Telemetry
+## Extensions
 Not yet implemented.
 
 ## Demos
@@ -370,6 +378,17 @@ zig build demo:oversize --release -Darch=ARCH_OPTION
 Stream a response to the client and continue execution of the response conclusion:
 ```console
 zig build demo:stream --release -Darch=ARCH_OPTION
+```
+
+### Lambda URLs
+Use Lambda URLs buffered invoke to serve dynamic web pages:
+```console
+zig build demo:url --release -Darch=ARCH_OPTION
+```
+
+Use Lambda URLs response streaming to serve dynamic updates:
+```console
+zig build demo:url_stream --release -Darch=ARCH_OPTION
 ```
 
 ## License

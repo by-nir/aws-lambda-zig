@@ -29,10 +29,9 @@ fn handler(_: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
 
     // We can use zig’s standard formatting when writing and publishing.
     try stream.publishFmt("id: {d}\ndata: This is message number {d}\n\n", .{ 2, 3 });
-    std.time.sleep(HALF_SEC);
 
     // We can optionally let the runtime know we have finished the response.
-    // If we don't have more work to do, we can return without calling `close`.
+    // If we don't have more work to do, we can return without calling `close()`.
     try stream.close();
 
     // Then we can proceed to other work.

@@ -6,6 +6,9 @@ const testing = std.testing;
 const test_alloc = testing.allocator;
 const json = @import("../utils/json.zig");
 const KeyVal = @import("../utils/KeyVal.zig");
+const hdl = @import("../runtime/handle.zig");
+
+const INTEGRATION_CONTENT_TYPE = "application/vnd.awslambda.http-integration-response";
 
 // https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html
 // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-events/src/event/lambda_function_urls/mod.rs
@@ -16,6 +19,8 @@ pub const ResponseBody = union(enum) {
 };
 
 pub const Response = struct {
+    /// The HTTP content type of the response.
+    content_type: ?[]const u8 = null,
     /// The HTTP status code for the response.
     status_code: std.http.Status = .ok,
     /// A list of all cookies sent as part of the response.
@@ -25,9 +30,9 @@ pub const Response = struct {
     /// cookie1=value1; Expires=21 Oct 2021 07:48 GMT
     /// ```
     cookies: []const []const u8 = &.{},
-    /// The response’s headers.
+    /// The response’s headers. Lambda URLs **don’t support** headers with multiple values.
     ///
-    /// Lambda URLs **don’t support** headers with multiple values.
+    /// To set the content type of the response, use the `content_type` field.
     /// To return cookies from your function, don't manually add `set-cookie` headers, instead set the `cookies` field.
     headers: []const KeyVal = &.{},
     /// The body of the response.
@@ -45,36 +50,45 @@ pub const Response = struct {
         const writer = buffer.writer();
         try writer.writeByte('{');
 
-        try writer.print("\"statusCode\":{d},", .{@intFromEnum(self.status_code)});
+        try writer.print("\"statusCode\":{d}", .{@intFromEnum(self.status_code)});
 
         if (self.cookies.len > 0) {
-            try writer.writeAll("\"cookies\":[");
+            try writer.writeAll(",\"cookies\":[");
             for (self.cookies, 0..) |cookie, i| {
                 if (i != 0) try writer.writeByte(',');
                 try std.json.encodeJsonString(cookie, .{}, writer);
             }
-            try writer.writeAll("],");
+            try writer.writeAll("]");
         }
 
-        if (self.headers.len > 0) {
-            try writer.writeAll("\"headers\":{");
+        if (self.headers.len > 0 or self.content_type != null) {
+            try writer.writeAll(",\"headers\":{");
+
+            var has_ct = false;
+            if (self.content_type) |ct| {
+                try writer.writeAll("\"Content-Type\":");
+                try std.json.encodeJsonString(ct, .{}, writer);
+                has_ct = true;
+            }
+
             for (self.headers, 0..) |header, i| {
-                if (i != 0) try writer.writeByte(',');
+                if (has_ct or i != 0) try writer.writeByte(',');
                 try std.json.encodeJsonString(header.key, .{}, writer);
                 try writer.writeByte(':');
                 try std.json.encodeJsonString(header.value, .{}, writer);
             }
-            try writer.writeAll("},");
+
+            try writer.writeAll("}");
         }
 
         switch (self.body) {
-            .textual => |s| {
-                try writer.writeAll("\"body\":");
+            .textual => |s| if (s.len > 0) {
+                try writer.writeAll(",\"body\":");
                 try std.json.encodeJsonString(s, .{}, writer);
             },
-            .binary => |s| {
-                try writer.writeAll("\"isBase64Encoded\":true,");
-                try writer.writeAll("\"body\":\"");
+            .binary => |s| if (s.len > 0) {
+                try writer.writeAll(",\"isBase64Encoded\":true");
+                try writer.writeAll(",\"body\":\"");
                 try std.base64.standard.Encoder.encodeWriter(writer, s);
                 try writer.writeByte('"');
             },
@@ -88,13 +102,14 @@ pub const Response = struct {
 test Response {
     const text_response = Response{
         .status_code = .created,
+        .content_type = "application/json",
         .cookies = &.{
             "Cookie_1=Value1; Expires=21 Oct 2021 07:48 GMT",
             "Cookie_2=Value2; Max-Age=78000",
         },
         .headers = &.{
-            .{ .key = "Content-Type", .value = "application/json" },
-            .{ .key = "My-Custom-Header", .value = "Custom Value" },
+            .{ .key = "Foo-Header", .value = "Bar Value" },
+            .{ .key = "Baz-Header", .value = "Qux Value" },
         },
         .body = .{
             .textual = "{\"message\":\"Hello, world!\"}",
@@ -109,7 +124,7 @@ test Response {
         ++
         \\"cookies":["Cookie_1=Value1; Expires=21 Oct 2021 07:48 GMT","Cookie_2=Value2; Max-Age=78000"],
         ++
-        \\"headers":{"Content-Type":"application/json","My-Custom-Header":"Custom Value"},
+        \\"headers":{"Content-Type":"application/json","Foo-Header":"Bar Value","Baz-Header":"Qux Value"},
         ++
         \\"body":"{\"message\":\"Hello, world!\"}"
     ++ "}", text_encoded);
@@ -129,6 +144,55 @@ test Response {
         \\"body":"Zm9vMTA4IQ=="
     ++ "}", binary_encoded);
 }
+
+/// Open an HTTP streaming response.
+///
+/// ```zig
+/// try lambda.url.openStream(ctx, stream, .{
+///     .status_code = .ok,
+///     .content_type = "text/html; charset=utf-8",
+///     .cookies = &.{ "cookie1=value1; Max-Age=86400; HttpOnly; Secure; SameSite=Lax" },
+///     .headers = &.{ .{ .key = "Cache-Control", .value = "max-age=300, immutable" } },
+///     .body = .{ .textual = "<h1>Incoming...</h1>" },
+/// });
+/// ```
+pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !void {
+    // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-runtime/src/requests.rs
+    // https://aws.amazon.com/blogs/compute/using-response-streaming-with-aws-lambda-web-adapter-to-optimize-performance
+    try stream.openWithFmt(INTEGRATION_CONTENT_TYPE, "{}", .{StreamingResponse{
+        .arena = ctx.arena,
+        .response = response,
+    }});
+}
+
+const StreamingResponse = struct {
+    arena: Allocator,
+    response: Response,
+
+    pub fn format(self: StreamingResponse, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        var response = self.response;
+        response.body = .{ .textual = "" };
+        const prelude = try response.encode(self.arena);
+
+        try writer.print("{x}\r\n", .{prelude.len});
+        try writer.writeAll(prelude);
+        try writer.writeAll("\r\n");
+
+        try writer.writeAll("8\r\n");
+        try writer.writeByteNTimes('\x00', 8);
+        try writer.writeAll("\r\n");
+
+        const body = switch (self.response.body) {
+            inline else => |s| s,
+        };
+
+        if (body.len > 0) {
+            try writer.print("{x}\r\n", .{body.len});
+            try writer.writeAll(body);
+            try writer.writeAll("\r\n");
+        }
+    }
+};
 
 pub const Request = struct {
     /// The request path. If the request URL is `https://{url-id}.lambda-url.{region}.on.aws/example/test/demo`,
