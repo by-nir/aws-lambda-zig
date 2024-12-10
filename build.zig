@@ -42,6 +42,7 @@ pub fn build(b: *std.Build) void {
         addDemo(b, target, optimize, "oversize", "demo/oversize.zig", lib);
         addDemo(b, target, optimize, "stream", "demo/stream.zig", lib);
         addDemo(b, target, optimize, "stream_throw", "demo/stream_throw.zig", lib);
+        addDemo(b, target, optimize, "url", "demo/url_buffer.zig", lib);
     }
 }
 

@@ -32,6 +32,11 @@ pub const Response = struct {
     /// The body of the response.
     body: ResponseBody = .{ .textual = "" },
 
+    /// A pre-encoded response for a HTTP 500 Internal Server Error.
+    ///
+    /// Usefaul for cases when encoding a dynamic response is impossible (e.g. can’t allocate).
+    pub const internal_server_error = "{\"statusCode\":500,body:\"Internal Server Error\"}";
+
     pub fn encode(self: Response, allocator: Allocator) ![]const u8 {
         var buffer = std.ArrayList(u8).init(allocator);
         errdefer buffer.deinit();
@@ -148,8 +153,8 @@ pub const Request = struct {
     /// An object that contains additional information about the request.
     request_context: RequestContext = .{},
 
-    pub fn init(allocator: Allocator, source: []const u8) !Request {
-        var scanner = Scanner.initCompleteInput(allocator, source);
+    pub fn init(allocator: Allocator, event: []const u8) !Request {
+        var scanner = Scanner.initCompleteInput(allocator, event);
         defer scanner.deinit();
 
         var request = Request{};
