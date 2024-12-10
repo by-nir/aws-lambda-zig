@@ -57,7 +57,14 @@ pub const Server = struct {
         self.http.deinit();
         self.env.deinit();
         self.arena.deinit();
-        _ = self.gpa.deinit();
+
+        switch (self.gpa.deinit()) {
+            .ok => {},
+            .leak => {
+                // In debug mode we warn about leaks when the function instance terminates.
+                log.warn("The GPA allocator detected a leak when terminating the instance.", .{});
+            },
+        }
     }
 
     fn initFailed(arena: Allocator, http: ?*HttpClient, err: anyerror, message: []const u8) anyerror {
