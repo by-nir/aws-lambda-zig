@@ -160,9 +160,21 @@ pub const Server = struct {
         }
     }
 
-    pub fn streamSuccess(self: *Server, content_type: []const u8) !Stream {
+    pub fn streamSuccess(
+        self: *Server,
+        content_type: []const u8,
+        comptime raw_http_prelude: []const u8,
+        args: anytype,
+    ) !Stream {
         const alloc = self.arena.allocator();
-        const request = api.streamInvocationOpen(alloc, &self.http, self.request_id, content_type) catch |err| {
+        const request = api.streamInvocationOpen(
+            alloc,
+            &self.http,
+            self.request_id,
+            content_type,
+            raw_http_prelude,
+            args,
+        ) catch |err| {
             return logErrorName("Opening a stream failed: {s}", err);
         };
 

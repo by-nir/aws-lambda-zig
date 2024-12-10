@@ -25,8 +25,9 @@ pub const Response = struct {
     /// cookie1=value1; Expires=21 Oct 2021 07:48 GMT
     /// ```
     cookies: []const []const u8 = &.{},
-    /// The response’s headers. Headers with multiple values should concatenate them with a comma.
+    /// The response’s headers.
     ///
+    /// Lambda URLs **don’t support** headers with multiple values.
     /// To return cookies from your function, don't manually add `set-cookie` headers, instead set the `cookies` field.
     headers: []const KeyVal = &.{},
     /// The body of the response.

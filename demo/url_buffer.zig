@@ -1,6 +1,6 @@
-//! Use Lambda URL to serve dynamic web pages.
+//! Use Lambda URLs to serve dynamic web pages.
 //!
-//! 👉 Be sure to condifure the Lambda function with URL enable and BUFFERED invoke mode.
+//! 👉 Be sure to configure the Lambda function with URL enabled and BUFFERED invoke mode.
 const std = @import("std");
 const mem = std.mem;
 const lambda = @import("aws-lambda");
@@ -17,7 +17,7 @@ pub fn main() void {
 }
 
 fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
-    // Decode the Lambda URL event.
+    // Decode the Lambda URLs event.
     // We pass an arena allocator, so we don’t need to deinit.
     const request = try lambda.url.Request.init(ctx.arena, event);
 
@@ -66,7 +66,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
             .{ .key = "Cache-Control", .value = "max-age=300, immutable" },
         },
         .body = .{ .textual = 
-        \\<h1>Lambda URL ⚡️ Zig Runtime</h1>
+        \\<h1>Lambda URLs ⚡️ Zig Runtime</h1>
         \\<p>Welcome to the demo web page!</p>
         \\
         \\<ul>

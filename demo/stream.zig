@@ -1,6 +1,6 @@
 //! Stream a response to the client.
 //!
-//! 👉 _Be sure to enable streaming support in the function configuration._
+//! 👉 Be sure to configure the Lambda function with URL enabled and RESPONSE_STREAM invoke mode.
 const std = @import("std");
 const lambda = @import("aws-lambda");
 

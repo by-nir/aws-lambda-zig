@@ -106,14 +106,27 @@ pub const Stream = struct {
 
     pub const Error = error{ ClosedStream, RuntimeFail };
 
-    /// Start the response stream with a given http content type.
-    ///
+    /// Start the response streaming of a specified content type.
     /// Calling open again after it has already been called is a non-op.
     pub fn open(self: Stream, content_type: []const u8) Error!void {
+        try self.openWith(content_type, "", {});
+    }
+
+    /// Start the response streaming of a specified HTTP content type and initial body payload.
+    /// Calling open again after it has already been called is a non-op.
+    ///
+    /// Warning: Note that `raw_http_prelude` expects raw HTTP as it merely appends the bytes to the HTTP request.
+    /// The user MUST format the payload with proper HTTP semantics (or use a Event Encoder).
+    pub fn openWithFmt(
+        self: Stream,
+        content_type: []const u8,
+        comptime raw_http_prelude: []const u8,
+        args: anytype,
+    ) Error!void {
         if (self.context.state != .pending or self.context.fail_source == .runtime) return;
 
         std.debug.assert(content_type.len > 0);
-        self.stream.* = self.server.streamSuccess(content_type) catch return self.runtimeFailiure();
+        self.stream.* = self.server.streamSuccess(content_type, raw_http_prelude, args) catch return self.runtimeFailiure();
         self.context.state = .active;
     }
 
@@ -165,20 +178,19 @@ pub const Stream = struct {
         self.stream.close(null) catch return self.runtimeFailiure();
     }
 
-    /// End the response stream with a **client-transmitted** error.
-    pub fn closeWithError(self: Stream, err: anyerror, message: []const u8) Error!void {
-        if (!self.isActive()) return error.ClosedStream;
-
-        try self.write(message);
-
-        self.context.state = .end;
-        self.stream.close(.{
-            .err_type = err,
-            .message = message,
-        }) catch {
-            return self.runtimeFailiure();
-        };
-    }
+    // TODO: Further investigate why Lambda’s Runtime API seems to ignore the trailer headers.
+    // /// End the response stream with a trailing HTTP error.
+    // pub fn closeWithError(self: Stream, err: anyerror, message: []const u8) Error!void {
+    //     if (!self.isActive()) return error.ClosedStream;
+    //
+    //     self.context.state = .end;
+    //     self.stream.close(.{
+    //         .type = err,
+    //         .message = message,
+    //     }) catch {
+    //         return self.runtimeFailiure();
+    //     };
+    // }
 
     fn isActive(self: Stream) bool {
         return self.context.state == .active and self.context.fail_source != .runtime;

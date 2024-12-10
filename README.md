@@ -310,14 +310,14 @@ _Closing the stream is not required._
 
 | Method | Description |
 | ------ | ----------- |
-| `stream.open(content_type)` | Opens the response stream with the provided content type. |
+| `stream.open(content_type)` | Opens the response stream for a provided HTTP content type. |
+| `stream.openWithFmt(content_type, raw_http_format, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
 | `stream.write(message)` | Appends a message to the response buffer. |
 | `stream.writeFmt(format, args)` | Appends a message to the response buffer using Zig’s standard formatting conventions. |
 | `stream.flush()` | Publish the buffer to the client. |
 | `stream.publish(message)` | Appends a message to the buffer and **immediatly** publish it to the client. |
 | `stream.publishFmt(format, args)` | Appends a message to the buffer using Zig’s standard formatting conventions, and **immediatly** publish it to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
-| `stream.closeWithError(err, message)` | Terminate the stream with an error and publish a message to the client. |
 
 ### Structured Events
 Not yet implemented.
@@ -365,16 +365,11 @@ zig build demo:oversize --release -Darch=ARCH_OPTION
 ```
 
 ### Response Streaming
-👉 _Be sure to configure the function with streaming enabled._
+👉 _Be sure to configure the Lambda function with URL enabled and RESPONSE_STREAM invoke mode._
 
 Stream a response to the client and continue execution of the response conclusion:
 ```console
 zig build demo:stream --release -Darch=ARCH_OPTION
-```
-
-Stream a response to the client and eventually fail:
-```console
-zig build demo:stream_throw --release -Darch=ARCH_OPTION
 ```
 
 ## License
