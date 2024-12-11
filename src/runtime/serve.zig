@@ -6,13 +6,7 @@ const HttpClient = @import("../utils/Http.zig");
 const environ = @import("../utils/environ.zig");
 const log = @import("../utils/log.zig").runtime;
 
-pub const Options = struct {};
-
-pub const ProcessorFn = *const fn (
-    server: *Server,
-    context: ctx.Context,
-    event: []const u8,
-) InvocationResult;
+pub const ProcessorFn = *const fn (server: *Server, ctx: ctx.Context, event: []const u8) InvocationResult;
 
 pub const InvocationResult = enum {
     /// The runtime may process another event.
@@ -20,6 +14,8 @@ pub const InvocationResult = enum {
     /// The runtime should terminate the lambda instance.
     abort,
 };
+
+pub const Options = struct {};
 
 pub const Server = struct {
     gpa: std.heap.GeneralPurposeAllocator(.{}),
@@ -61,7 +57,14 @@ pub const Server = struct {
         self.http.deinit();
         self.env.deinit();
         self.arena.deinit();
-        _ = self.gpa.deinit();
+
+        switch (self.gpa.deinit()) {
+            .ok => {},
+            .leak => {
+                // In debug mode we warn about leaks when the function instance terminates.
+                log.warn("The GPA allocator detected a leak when terminating the instance.", .{});
+            },
+        }
     }
 
     fn initFailed(arena: Allocator, http: ?*HttpClient, err: anyerror, message: []const u8) anyerror {
@@ -90,38 +93,43 @@ pub const Server = struct {
 
     /// Event loop – request and invocate events sequentially.
     pub fn listen(self: *Server, processorFn: ProcessorFn) void {
+        var force_terminate = false;
         var context = ctx.Context{
             .gpa = self.gpa.allocator(),
             .arena = self.arena.allocator(),
+            ._force_destroy = &force_terminate,
         };
         ctx.loadMeta(&context, &self.env);
 
-        while (true) {
-            // Request the next event
-            const next = api.sendInvocationNext(self.arena.allocator(), &self.http) catch |err| {
-                log.err("Requesting the next invocation failed: {s}", .{@errorName(err)});
-                return;
-            };
-
+        // Request the next event
+        while (api.sendInvocationNext(self.arena.allocator(), &self.http)) |next| {
             // Handle the event
             switch (next) {
+                // Failed retrieving the event
                 .forbidden => |err| {
-                    // Failed retrieving the event
                     log.err("Requesting the next invocation failed: {s}.\n{s}", .{ err.type, err.message });
                 },
+
+                // Update event-specific metadata
                 .success => |event| {
-                    // Update event-specific metadata
                     self.request_id = event.request_id;
                     ctx.updateMeta(&context, event);
-                    defer context.request.xray_trace = "";
 
                     // Process the event
-                    if (processorFn(self, context, event.payload) == .abort) return;
+                    const status = processorFn(self, context, event.payload);
+                    if (status == .abort) {
+                        // The handler failed processing the event
+                        return;
+                    } else if (force_terminate) {
+                        @panic("The handler requested to terminate the instance");
+                    }
                 },
             }
 
             // Clean-up ahead of the next invocation
             _ = self.arena.reset(.retain_capacity);
+        } else |err| {
+            log.err("Requesting the next invocation failed: {s}", .{@errorName(err)});
         }
     }
 
@@ -164,9 +172,21 @@ pub const Server = struct {
         }
     }
 
-    pub fn streamSuccess(self: *Server, content_type: []const u8) !Stream {
+    pub fn streamSuccess(
+        self: *Server,
+        content_type: []const u8,
+        comptime raw_http_prelude: []const u8,
+        args: anytype,
+    ) !Stream {
         const alloc = self.arena.allocator();
-        const request = api.streamInvocationOpen(alloc, &self.http, self.request_id, content_type) catch |err| {
+        const request = api.streamInvocationOpen(
+            alloc,
+            &self.http,
+            self.request_id,
+            content_type,
+            raw_http_prelude,
+            args,
+        ) catch |err| {
             return logErrorName("Opening a stream failed: {s}", err);
         };
 
@@ -180,18 +200,10 @@ pub const Server = struct {
         req: HttpClient.Request,
         arena: std.mem.Allocator,
 
-        pub fn write(self: *Stream, payload: []const u8) !void {
-            const writer = self.req.writer();
-            writer.writeAll(payload) catch |err| {
-                return logErrorName("Writing to the stream’s buffer failed: {s}", err);
-            };
-        }
+        pub const Writer = std.http.Client.Request.Writer;
 
-        pub fn writeFmt(self: *Stream, comptime format: []const u8, args: anytype) !void {
-            const writer = self.req.writer();
-            writer.print(format, args) catch |err| {
-                return logErrorName("Writing to the stream’s buffer failed: {s}", err);
-            };
+        pub fn writer(self: *Stream) Writer {
+            return self.req.writer();
         }
 
         pub fn flush(self: *Stream) !void {

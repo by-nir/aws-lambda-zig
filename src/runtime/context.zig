@@ -20,11 +20,21 @@ pub const Context = struct {
     /// Request metadata of the invocation.
     request: RequestMeta = .{},
 
+    _force_destroy: *bool,
     _kv: *const std.process.EnvMap = undefined,
 
     /// Return the environmant value associated with a key.
     pub fn env(self: Context, key: []const u8) ?[]const u8 {
         return self._kv.get(key);
+    }
+
+    /// This will crash the runtime AFTER returning the response to the client.
+    /// The Lambda execution environment will terminate the function instance.
+    ///
+    /// Warning: Use with caution! Only use this method when you assume the function
+    /// won’t behave as expected in the following invocation.
+    pub fn forceTerminateAfterResponse(self: Context) void {
+        self._force_destroy.* = true;
     }
 
     pub const ConfigMeta = struct {

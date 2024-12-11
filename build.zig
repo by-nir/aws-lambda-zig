@@ -40,8 +40,10 @@ pub fn build(b: *std.Build) void {
         addDemo(b, target, optimize, "debug", "demo/debug.zig", lib);
         addDemo(b, target, optimize, "fail", "demo/fail.zig", lib);
         addDemo(b, target, optimize, "oversize", "demo/oversize.zig", lib);
+        addDemo(b, target, optimize, "terminate", "demo/terminate.zig", lib);
         addDemo(b, target, optimize, "stream", "demo/stream.zig", lib);
-        addDemo(b, target, optimize, "stream_throw", "demo/stream_throw.zig", lib);
+        addDemo(b, target, optimize, "url", "demo/url_buffer.zig", lib);
+        addDemo(b, target, optimize, "url_stream", "demo/url_stream.zig", lib);
     }
 }
 
@@ -58,6 +60,7 @@ fn addDemo(
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path(path),
+        .strip = true,
     });
     exe.root_module.addImport("aws-lambda", lib);
 

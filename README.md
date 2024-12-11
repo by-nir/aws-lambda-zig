@@ -12,7 +12,6 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 - [x] Runtime API
 - [ ] Extensions API
 - [ ] Telemetry API
-- [ ] Structured events
 - [x] Response streaming
 - [x] CloudWatch & X-Ray integration
 - [ ] Lifecycle hooks
@@ -21,14 +20,26 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 - [ ] Managed build step
 - [ ] Testing utilities
 
+### Services Events
+_Feel free to open an issue for additional integrations, or better contribute a pull request._
+
+- [ ] Unified HTTP
+- [x] Lambda URLs
+- [ ] API Gateway
+- [ ] S3
+- [ ] SQS
+- [ ] SNS
+- [ ] DynamoDB
+- [ ] Data Firehose
+
 ### Benchmark
 Using zig allows creating small and fast functions.<br />
 Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
 
-- ❄️ `~13ms` cold start invocation duration
+- ❄️ `~11ms` cold start invocation duration
 - ⚡ `~1.5ms` warm invocation duration
-- 💾 `12 MB` max memory consumption
-- ⚖️ `1.8 MB` function size (zip)
+- 💾 `12 MiB` max memory consumption
+- ⚖️ `0.36 MiB` function size (zip)
 
 
 > [!TIP]
@@ -55,7 +66,7 @@ Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
     - Configure it with _Amazon Linux 2023_ or other **OS-only runtime**.
     - Use you prefered deployment method: console, CLI, SAM or any CI solution.
 
-### Example Build Script
+### Build Script
 ```zig
 const std = @import("std");
 const lambda = @import("aws-lambda");
@@ -65,26 +76,27 @@ pub fn build(b: *std.Build) void {
         .preferred_optimize_mode = .ReleaseFast,
     });
 
-    // Add an architecture confuration option and resolves a target query.
+    // Add an architecture confuration option and resolves a target query
     const target = lambda.resolveTargetQuery(b, lambda.archOption(b));
 
-    // Add the handler executable.
+    // Add the handler executable
     const exe = b.addExecutable(.{
-        // Note the executable name must be "bootstrap".
-        .name = "bootstrap",
+        .name = "bootstrap", // The executable name must be "bootstrap"!
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        // .link_libc = true, // Uncomment if glibc is required.
+        // .strip = true, // Uncomment if no stack traces are needed.
     });
     b.installArtifact(exe);
 
-    // Import the runtime module.
+    // Import the runtime module
     const runtime = b.dependency("aws-lambda", .{}).module("lambda");
     exe.root_module.addImport("aws-lambda", runtime);
 }
 ```
 
-### Example Event Handler
+### Event Handler
 ```zig
 const lambda = @import("aws-lambda");
 
@@ -111,7 +123,7 @@ This library provides a runtime module that handles the Lambda lifecycle and com
 To use it, follow the following requirements:
     - Import the Lambda Runtime module this library provides and wrap a handler function with it.
     - Build an executable named _bootstrap_ and archive it in a Zip file.
-    - Use _Amazon Linux 2023_ or any other supported OS-only runtime.
+    - Use _Amazon Linux 2023_ runtime.
 
 #### Managed Target
 AWS Lambda supports two architectures: _x86_64_ and _arm64_ based on _Graviton2_. In order to build the event handler correctly and to squeeze the best performance, the build target must be configured accordingly.
@@ -143,6 +155,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        // .link_libc = true, // Uncomment if glibc is required.
+        // .strip = true, // Uncomment if no stack traces are needed.
     });
     b.installArtifact(exe);
 
@@ -169,7 +183,7 @@ pub fn main() void {
     lambda.handle(handlerSync, .{});
 
     // Alternatively, for asynchronous handlers:
-    // lambda.handleAsync(handlerAsync, .{});
+    lambda.handleAsync(handlerAsync, .{});
 }
 
 fn handlerSync(
@@ -219,7 +233,7 @@ Since the runtime manages the function and invocation lifecycle, it also owns th
 | `ctx.arena` | The memory is tied to the invocation’s lifetime. The runtime will deallocate it on your behalf after the invocation resolves. |
 
 > [!NOTE]
-> While `ctx.gpa` may be used to persist data and services between invocations, for such cases consider using [dependency injection](#dependency-injection) or [extensions](#extensions--telemetry).
+> While `ctx.gpa` may be used to persist data and services between invocations, for such cases consider using [dependency injection](#dependency-injection) or [extensions](#extensions).
 
 #### Environment Variables
 The functions’ environment variables are mapped by the _handler context_, they can be accesed using the `env(key)` method:
@@ -256,6 +270,17 @@ Static config metadata is provided by the _handler context_ `ctx.config` field. 
 | `func_handler` | `[]const u8` | Handler location configured on the function. |
 | `log_group` | `[]const u8` | Name of the Amazon CloudWatch Logs group for the function. |
 | `log_stream` | `[]const u8` | Name of the Amazon CloudWatch Logs stream for the function. |
+
+#### Force Termination
+Request the Lambda execution crash the runtime **AFTER** returning the response to the client.
+
+```zig
+ctx.forceTerminateAfterResponse();
+```
+
+> [!WARNING]
+> Use with caution! Only use this method when you assume the function won’t behave
+> as expected in the following invocation.
 
 ### Response Streaming
 The runtime supports streaming responses to the client; though implementing a streaming handler differs from the standard handler.
@@ -310,17 +335,13 @@ _Closing the stream is not required._
 
 | Method | Description |
 | ------ | ----------- |
-| `stream.open(content_type)` | Opens the response stream with the provided content type. |
+| `stream.open(content_type)` | Opens the response stream for a provided HTTP content type. |
+| `stream.openWith(content_type, raw_http_format, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
+| `stream.writer()` | Writer for appending to the response buffer. |
 | `stream.write(message)` | Appends a message to the response buffer. |
-| `stream.writeFmt(format, args)` | Appends a message to the response buffer using Zig’s standard formatting conventions. |
-| `stream.flush()` | Publish the buffer to the client. |
+| `stream.flush()` | Publish the response buffer to the client. |
 | `stream.publish(message)` | Appends a message to the buffer and **immediatly** publish it to the client. |
-| `stream.publishFmt(format, args)` | Appends a message to the buffer using Zig’s standard formatting conventions, and **immediatly** publish it to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
-| `stream.closeWithError(err, message)` | Terminate the stream with an error and publish a message to the client. |
-
-### Structured Events
-Not yet implemented.
 
 ### Lifecycle Hooks
 Not yet implemented.
@@ -328,7 +349,7 @@ Not yet implemented.
 ### Dependency Injection
 Not yet implemented.
 
-### Extensions & Telemetry
+## Extensions
 Not yet implemented.
 
 ## Demos
@@ -364,17 +385,31 @@ Returns an output larger than the Lambda limit; the runtime logs an error to _Cl
 zig build demo:oversize --release -Darch=ARCH_OPTION
 ```
 
+Force the Lambda function instance the terminate after returning a response:
+```console
+zig build demo:terminate --release -Darch=ARCH_OPTION
+```
+
+🛑 Use with caution!
+_Only use this method when you assume the function won’t behave as expected in the following invocation._
+
 ### Response Streaming
-👉 _Be sure to configure the function with streaming enabled._
+👉 _Be sure to configure the Lambda function with URL enabled and RESPONSE_STREAM invoke mode._
 
 Stream a response to the client and continue execution of the response conclusion:
 ```console
 zig build demo:stream --release -Darch=ARCH_OPTION
 ```
 
-Stream a response to the client and eventually fail:
+### Lambda URLs
+Use Lambda URLs buffered invoke to serve dynamic web pages:
 ```console
-zig build demo:stream_throw --release -Darch=ARCH_OPTION
+zig build demo:url --release -Darch=ARCH_OPTION
+```
+
+Use Lambda URLs response streaming to serve dynamic updates:
+```console
+zig build demo:url_stream --release -Darch=ARCH_OPTION
 ```
 
 ## License

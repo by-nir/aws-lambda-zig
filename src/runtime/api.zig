@@ -80,10 +80,14 @@ pub fn streamInvocationOpen(
     client: *Client,
     req_id: []const u8,
     content_type: []const u8,
+    comptime raw_http_prelude: []const u8,
+    args: anytype,
 ) Error!Client.Request {
     const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Success");
     return client.streamOpen(path, .{
         .request = .{
+            .authorization = .omit,
+            .accept_encoding = .omit,
             .content_type = .{ .override = content_type },
         },
         .headers = &[_]Client.Header{
@@ -91,7 +95,7 @@ pub fn streamInvocationOpen(
             .{ .name = "Trailer", .value = ERROR_HEAD_TYPE },
             .{ .name = "Trailer", .value = ERROR_HEAD_BODY },
         },
-    }) catch |e| {
+    }, raw_http_prelude, args) catch |e| {
         log.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
@@ -108,17 +112,23 @@ pub fn streamInvocationClose(
     const trailer: ?[]const Client.Header = if (err_req) |err| blk: {
         const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.type)}) catch |e| {
             log.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
-            return e;
+            return error.ClientError;
         };
-        const size = std.base64.standard.Encoder.calcSize(err.message.len);
-        const body = arena.alloc(u8, size) catch |e| {
+
+        const body = formatError(arena, "Handler", err) catch |e| {
+            log.err("[Send Error] Formatting error body failed: {s}", .{@errorName(e)});
+            return error.ClientError;
+        };
+        const size = std.base64.standard.Encoder.calcSize(body.len);
+        const body_encoded = arena.alloc(u8, size) catch |e| {
             log.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
-            return e;
+            return error.ClientError;
         };
-        _ = std.base64.standard.Encoder.encode(body, err.message);
+        _ = std.base64.standard.Encoder.encode(body_encoded, body);
+
         break :blk &[_]Client.Header{
             .{ .name = ERROR_HEAD_TYPE, .value = err_type },
-            .{ .name = ERROR_HEAD_BODY, .value = body },
+            .{ .name = ERROR_HEAD_BODY, .value = body_encoded },
         };
     } else null;
 
@@ -159,18 +169,15 @@ fn sendError(
     arena: Allocator,
     client: *Client,
     path: []const u8,
-    cat: []const u8,
+    err_category: []const u8,
     err: ErrorRequest,
 ) !Client.Result {
     const head = Client.Header{
         .name = ERROR_HEAD_TYPE,
         .value = @errorName(err.type),
     };
-    const payload = std.fmt.allocPrint(
-        arena,
-        "{{\"errorType\":\"{s}.{s}\",\"errorMessage\":\"{s}\",\"stackTrace\":[]}}",
-        .{ cat, @errorName(err.type), err.message },
-    ) catch |e| {
+
+    const payload = formatError(arena, err_category, err) catch |e| {
         log.err("[Send Error] Formatting error failed: {s}", .{@errorName(e)});
         return error.ClientError;
     };
@@ -178,6 +185,8 @@ fn sendError(
     return client.send(arena, path, payload, .{
         .headers = &.{head},
         .request = .{
+            .authorization = .omit,
+            .accept_encoding = .omit,
             .content_type = .{ .override = ERROR_CONTENT_TYPE },
         },
     }) catch |e| {
@@ -191,6 +200,25 @@ fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]
         log.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
+}
+
+fn formatError(arena: Allocator, err_category: []const u8, err: ErrorRequest) ![]const u8 {
+    var buffer = std.ArrayList(u8).init(arena);
+    const writer = buffer.writer();
+
+    try writer.print(
+        \\{{"errorType":"{s}.
+    , .{err_category});
+    try std.json.encodeJsonStringChars(@errorName(err.type), .{}, writer);
+    try writer.writeAll(
+        \\","errorMessage":"
+    );
+    try std.json.encodeJsonStringChars(err.message, .{}, writer);
+    try writer.writeAll(
+        \\","stackTrace":[]}
+    );
+
+    return buffer.toOwnedSlice();
 }
 
 const Status = enum(u9) {
@@ -247,13 +275,9 @@ pub const InvocationEvent = struct {
     payload: []const u8,
 
     pub fn parse(arena: Allocator, result: *Client.Result) !InvocationEvent {
-        var event = InvocationEvent{
-            .request_id = undefined,
-            .xray_trace = undefined,
-            .invoked_arn = undefined,
-            .deadline_ms = undefined,
+        var event = std.mem.zeroInit(InvocationEvent, .{
             .payload = result.body,
-        };
+        });
 
         while (result.headers.next()) |header| {
             if (mem.eql(u8, "Lambda-Runtime-Aws-Request-Id", header.name))
