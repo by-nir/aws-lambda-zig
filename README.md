@@ -336,12 +336,11 @@ _Closing the stream is not required._
 | Method | Description |
 | ------ | ----------- |
 | `stream.open(content_type)` | Opens the response stream for a provided HTTP content type. |
-| `stream.openWithFmt(content_type, raw_http_format, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
+| `stream.openWith(content_type, raw_http_format, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
+| `stream.writer()` | Writer for appending to the response buffer. |
 | `stream.write(message)` | Appends a message to the response buffer. |
-| `stream.writeFmt(format, args)` | Appends a message to the response buffer using Zig’s standard formatting conventions. |
-| `stream.flush()` | Publish the buffer to the client. |
+| `stream.flush()` | Publish the response buffer to the client. |
 | `stream.publish(message)` | Appends a message to the buffer and **immediatly** publish it to the client. |
-| `stream.publishFmt(format, args)` | Appends a message to the buffer using Zig’s standard formatting conventions, and **immediatly** publish it to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
 
 ### Lifecycle Hooks

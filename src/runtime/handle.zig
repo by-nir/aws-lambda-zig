@@ -2,6 +2,7 @@ const std = @import("std");
 const log = @import("../utils/log.zig").runtime;
 const srv = @import("serve.zig");
 const Server = srv.Server;
+
 pub const Options = srv.Options;
 pub const Context = @import("context.zig").Context;
 
@@ -9,7 +10,7 @@ const AsyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror!void;
 const SyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror![]const u8;
 const StreamingHandlerFn = fn (ctx: Context, event: []const u8, stream: Stream) anyerror!void;
 
-fn serve(options: srv.Options, processorFn: srv.ProcessorFn) void {
+fn serve(options: Options, processorFn: srv.ProcessorFn) void {
     // Initialize the server.
     // If it fails we can return since the server already logged the error.
     var server: Server = undefined;
@@ -22,7 +23,7 @@ fn serve(options: srv.Options, processorFn: srv.ProcessorFn) void {
 
 /// The entry point for a synchronous AWS Lambda function.
 /// Accepts a handler function that will process each event separetly.
-pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: srv.Options) void {
+pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: Options) void {
     serve(options, struct {
         fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             if (handlerFn(ctx, event)) |output| {
@@ -38,7 +39,7 @@ pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: srv.Options) void 
 
 /// The entry point for an asynchronous AWS Lambda function.
 /// Accepts a handler function that will process each event separetly.
-pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: srv.Options) void {
+pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: Options) void {
     serve(options, struct {
         fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             if (handlerFn(ctx, event)) {
@@ -54,7 +55,7 @@ pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: srv.Options) voi
 
 /// The entry point for a response streaming AWS Lambda function.
 /// Accepts a streaming handler function that will process each event separetly.
-pub fn handleStreaming(comptime handlerFn: StreamingHandlerFn, options: srv.Options) void {
+pub fn handleStreaming(comptime handlerFn: StreamingHandlerFn, options: Options) void {
     serve(options, struct {
         fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             var stream: Server.Stream = undefined;
@@ -105,6 +106,8 @@ pub const Stream = struct {
     context: *StreamingContext,
 
     pub const Error = error{ ClosedStream, RuntimeFail };
+    pub const WriterError = Error || Server.Stream.Writer.Error;
+    pub const Writer = std.io.Writer(Stream, WriterError, internalWrite);
 
     /// Start the response streaming of a specified content type.
     /// Calling open again after it has already been called is a non-op.
@@ -117,7 +120,7 @@ pub const Stream = struct {
     ///
     /// Warning: Note that `raw_http_prelude` expects raw HTTP as it merely appends the bytes to the HTTP request.
     /// The user MUST format the payload with proper HTTP semantics (or use a Event Encoder).
-    pub fn openWithFmt(
+    pub fn openWith(
         self: Stream,
         content_type: []const u8,
         comptime raw_http_prelude: []const u8,
@@ -126,48 +129,53 @@ pub const Stream = struct {
         if (self.context.state != .pending or self.context.fail_source == .runtime) return;
 
         std.debug.assert(content_type.len > 0);
-        self.stream.* = self.server.streamSuccess(content_type, raw_http_prelude, args) catch return self.runtimeFailiure();
+        self.stream.* = self.server.streamSuccess(content_type, raw_http_prelude, args) catch {
+            return self.runtimeFailiure();
+        };
         self.context.state = .active;
     }
 
-    /// Append to the stream’s buffer.
+    /// Append to the response buffer and send it the client.
     ///
     /// If an error occurs, the stream is closed and the handler should return as soon as possible.
-    pub fn write(self: Stream, payload: []const u8) Error!void {
-        if (!self.isActive()) return error.ClosedStream;
-        self.stream.write(payload) catch return self.runtimeFailiure();
+    pub fn publish(self: Stream, payload: []const u8) WriterError!void {
+        try self.write(payload);
+        try self.flush();
     }
 
-    /// Append to the stream’s buffer.
+    /// Append to the response buffer.
+    /// Call `flush()` to send the buffer to the client.
     ///
     /// If an error occurs, the stream is closed and the handler should return as soon as possible.
-    pub fn writeFmt(self: Stream, comptime format: []const u8, args: anytype) Error!void {
-        if (!self.isActive()) return error.ClosedStream;
-        self.stream.writeFmt(format, args) catch return self.runtimeFailiure();
+    pub fn write(self: Stream, payload: []const u8) WriterError!void {
+        return self.stream.writer().writeAll(payload);
     }
 
-    /// Send the stream’s buffer to the client.
+    /// Writer for appending to the response buffer.
+    /// Call `flush()` to send the buffer to the client.
+    ///
+    /// Assumes the stream is still active as long as the writer is used.
+    pub fn writer(self: Stream) Writer {
+        return .{ .context = self };
+    }
+
+    fn internalWrite(self: Stream, bytes: []const u8) WriterError!usize {
+        if (self.isActive()) {
+            return self.stream.writer().write(bytes) catch |err| {
+                log.err("Writing to the stream’s buffer failed: {s}", .{@errorName(err)});
+                return self.runtimeFailiure();
+            };
+        } else {
+            return error.ClosedStream;
+        }
+    }
+
+    /// Send the response buffer to the client.
     ///
     /// If an error occurs, the stream is closed and the handler should return as soon as possible.
     pub fn flush(self: Stream) Error!void {
         if (!self.isActive()) return error.ClosedStream;
         self.stream.flush() catch return self.runtimeFailiure();
-    }
-
-    /// Append to the stream’s buffer and send it the client.
-    ///
-    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
-    pub fn publish(self: Stream, payload: []const u8) Error!void {
-        try self.write(payload);
-        try self.flush();
-    }
-
-    /// Append to the stream’s buffer and send it the client.
-    ///
-    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
-    pub fn publishFmt(self: Stream, comptime format: []const u8, args: anytype) Error!void {
-        try self.writeFmt(format, args);
-        try self.flush();
     }
 
     /// **Optional**, end the response stream and proceed to do other work in the handler.
@@ -196,7 +204,7 @@ pub const Stream = struct {
         return self.context.state == .active and self.context.fail_source != .runtime;
     }
 
-    fn runtimeFailiure(self: Stream) Error!void {
+    fn runtimeFailiure(self: Stream) error{RuntimeFail} {
         self.context.fail_source = .runtime;
         return error.RuntimeFail;
     }

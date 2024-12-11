@@ -8,10 +8,10 @@ const json = @import("../utils/json.zig");
 const KeyVal = @import("../utils/KeyVal.zig");
 const hdl = @import("../runtime/handle.zig");
 
-const INTEGRATION_CONTENT_TYPE = "application/vnd.awslambda.http-integration-response";
-
 // https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html
 // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-events/src/event/lambda_function_urls/mod.rs
+
+const INTEGRATION_CONTENT_TYPE = "application/vnd.awslambda.http-integration-response";
 
 pub const ResponseBody = union(enum) {
     textual: []const u8,
@@ -159,7 +159,7 @@ test Response {
 pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !void {
     // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-runtime/src/requests.rs
     // https://aws.amazon.com/blogs/compute/using-response-streaming-with-aws-lambda-web-adapter-to-optimize-performance
-    try stream.openWithFmt(INTEGRATION_CONTENT_TYPE, "{}", .{StreamingResponse{
+    try stream.openWith(INTEGRATION_CONTENT_TYPE, "{}", .{StreamingResponse{
         .arena = ctx.arena,
         .response = response,
     }});

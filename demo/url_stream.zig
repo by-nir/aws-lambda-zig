@@ -44,7 +44,7 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
 
     // Append multiple to the stream’s buffer without publishing to the client.
     try stream.write("<h2>Update #1</h2>");
-    try stream.writeFmt("<p>Current epoch: <time>{d}</time></p>", .{std.time.timestamp()});
+    try stream.writer().print("<p>Current epoch: <time>{d}</time></p>", .{std.time.timestamp()});
 
     // Publish the buffered data to the client.
     try stream.flush();
@@ -57,11 +57,12 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
     );
     std.time.sleep(HALF_SEC);
 
-    // We can use zig’s standard formatting when writing and publishing.
-    try stream.publishFmt(
+    // One last message to the client...
+    try stream.writer().print(
         \\<h2>Update #{d}</h2>
         \\<p>Current epoch: <time>{d}</time></p>
     , .{ 3, std.time.timestamp() });
+    try stream.flush();
 
     // We can optionally let the runtime know we have finished the response.
     // If we don't have more work to do, we can return without calling `close()`.

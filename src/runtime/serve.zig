@@ -200,18 +200,10 @@ pub const Server = struct {
         req: HttpClient.Request,
         arena: std.mem.Allocator,
 
-        pub fn write(self: *Stream, payload: []const u8) !void {
-            const writer = self.req.writer();
-            writer.writeAll(payload) catch |err| {
-                return logErrorName("Writing to the stream’s buffer failed: {s}", err);
-            };
-        }
+        pub const Writer = std.http.Client.Request.Writer;
 
-        pub fn writeFmt(self: *Stream, comptime format: []const u8, args: anytype) !void {
-            const writer = self.req.writer();
-            writer.print(format, args) catch |err| {
-                return logErrorName("Writing to the stream’s buffer failed: {s}", err);
-            };
+        pub fn writer(self: *Stream) Writer {
+            return self.req.writer();
         }
 
         pub fn flush(self: *Stream) !void {
