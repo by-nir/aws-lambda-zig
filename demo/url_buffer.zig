@@ -24,6 +24,11 @@ fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
     // Use the router the serve dynamic content based on the event’s request.
     // If rendering the response fails, we instead return an error page.
     return router(ctx, request) catch |err| {
+        // ctx.forceTerminateAfterResponse();
+        // /\ Uncomment the above line if you assume the function won’t behave
+        // as expected in the following invocation. The Lambda execution environment
+        // will terminate the function instance AFTER rendering the error page.
+
         // Log the error to CloudWatch:
         lambda.log.err("Web server failed; raw path: `{s}`.", .{request.raw_path orelse ""});
 

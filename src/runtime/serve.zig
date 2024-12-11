@@ -93,38 +93,43 @@ pub const Server = struct {
 
     /// Event loop – request and invocate events sequentially.
     pub fn listen(self: *Server, processorFn: ProcessorFn) void {
+        var force_terminate = false;
         var context = ctx.Context{
             .gpa = self.gpa.allocator(),
             .arena = self.arena.allocator(),
+            ._force_destroy = &force_terminate,
         };
         ctx.loadMeta(&context, &self.env);
 
-        while (true) {
-            // Request the next event
-            const next = api.sendInvocationNext(self.arena.allocator(), &self.http) catch |err| {
-                log.err("Requesting the next invocation failed: {s}", .{@errorName(err)});
-                return;
-            };
-
+        // Request the next event
+        while (api.sendInvocationNext(self.arena.allocator(), &self.http)) |next| {
             // Handle the event
             switch (next) {
+                // Failed retrieving the event
                 .forbidden => |err| {
-                    // Failed retrieving the event
                     log.err("Requesting the next invocation failed: {s}.\n{s}", .{ err.type, err.message });
                 },
+
+                // Update event-specific metadata
                 .success => |event| {
-                    // Update event-specific metadata
                     self.request_id = event.request_id;
                     ctx.updateMeta(&context, event);
-                    defer context.request.xray_trace = "";
 
                     // Process the event
-                    if (processorFn(self, context, event.payload) == .abort) return;
+                    const status = processorFn(self, context, event.payload);
+                    if (status == .abort) {
+                        // The handler failed processing the event
+                        return;
+                    } else if (force_terminate) {
+                        @panic("The handler requested to terminate the instance");
+                    }
                 },
             }
 
             // Clean-up ahead of the next invocation
             _ = self.arena.reset(.retain_capacity);
+        } else |err| {
+            log.err("Requesting the next invocation failed: {s}", .{@errorName(err)});
         }
     }
 

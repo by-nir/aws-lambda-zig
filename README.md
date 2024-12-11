@@ -271,6 +271,17 @@ Static config metadata is provided by the _handler context_ `ctx.config` field. 
 | `log_group` | `[]const u8` | Name of the Amazon CloudWatch Logs group for the function. |
 | `log_stream` | `[]const u8` | Name of the Amazon CloudWatch Logs stream for the function. |
 
+#### Force Termination
+Request the Lambda execution crash the runtime **AFTER** returning the response to the client.
+
+```zig
+ctx.forceTerminateAfterResponse();
+```
+
+> [!WARNING]
+> Use with caution! Only use this method when you assume the function won’t behave
+> as expected in the following invocation.
+
 ### Response Streaming
 The runtime supports streaming responses to the client; though implementing a streaming handler differs from the standard handler.
 
@@ -374,6 +385,14 @@ Returns an output larger than the Lambda limit; the runtime logs an error to _Cl
 ```console
 zig build demo:oversize --release -Darch=ARCH_OPTION
 ```
+
+Force the Lambda function instance the terminate after returning a response:
+```console
+zig build demo:terminate --release -Darch=ARCH_OPTION
+```
+
+🛑 Use with caution!
+_Only use this method when you assume the function won’t behave as expected in the following invocation._
 
 ### Response Streaming
 👉 _Be sure to configure the Lambda function with URL enabled and RESPONSE_STREAM invoke mode._

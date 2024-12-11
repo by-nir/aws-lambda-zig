@@ -188,11 +188,10 @@ pub fn streamOpen(
 }
 
 pub fn streamClose(arena: Allocator, req: *Request, trailer: ?[]const Header) !Result {
-    const client = req.client;
     const connection = req.connection.?;
     defer {
         connection.closing = true;
-        client.connection_pool.release(client.allocator, connection);
+        req.client.connection_pool.release(req.client.allocator, connection);
     }
 
     // Close with trailer
