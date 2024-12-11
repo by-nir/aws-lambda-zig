@@ -59,6 +59,7 @@ fn addDemo(
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path(path),
+        .strip = true,
     });
     exe.root_module.addImport("aws-lambda", lib);
 
