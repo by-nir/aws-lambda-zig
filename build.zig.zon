@@ -1,6 +1,7 @@
 .{
-    .name = "aws-lambda",
+    .name = .aws_lambda,
     .version = "0.3.0",
+    .fingerprint = 0xdc70f8287a69c300,
 
     //.minimum_zig_version = "0.14.0",
 
