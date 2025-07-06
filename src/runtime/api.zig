@@ -26,7 +26,7 @@ pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus 
 pub const ErrorRequest = struct {
     type: anyerror,
     message: []const u8,
-    // stack_trace: ?[]const []const u8,
+    // TODO: stack_trace: ?[]const []const u8,
 };
 
 pub const ErrorResponse = struct {

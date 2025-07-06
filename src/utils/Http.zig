@@ -3,6 +3,8 @@ const std = @import("std");
 const testing = std.testing;
 const Client = std.http.Client;
 const Allocator = std.mem.Allocator;
+const builtin = @import("builtin");
+const package_version = @import("meta.zig").package_version;
 
 pub const Header = std.http.Header;
 pub const Request = Client.Request;
@@ -11,7 +13,11 @@ pub const HeaderIterator = std.http.HeaderIterator;
 const Self = @This();
 const MAX_HEAD_BUFFER = 16 * 1024;
 const MAX_BODY_BUFFER = 2 * 1024 * 1024;
-const USER_AGENT = "aws-lambda-zig/0.0.0 (zig@" ++ @import("builtin").zig_version_string ++ ")";
+
+const USER_AGENT = std.fmt.comptimePrint(
+    "aws-lambda-zig/{s} (Zig/{s})",
+    .{ package_version, builtin.zig_version_string },
+);
 
 var response_headers: [MAX_HEAD_BUFFER]u8 = undefined;
 

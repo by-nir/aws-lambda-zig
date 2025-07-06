@@ -79,20 +79,26 @@ pub fn build(b: *std.Build) void {
     // Add an architecture confuration option and resolves a target query
     const target = lambda.resolveTargetQuery(b, lambda.archOption(b));
 
-    // Add the handler executable
-    const exe = b.addExecutable(.{
-        .name = "bootstrap", // The executable name must be "bootstrap"!
-        .root_source_file = b.path("src/main.zig"),
+    // Import the runtime module
+    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
+
+    // Create the handler’s module
+    const mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
+        .root_source_file = b.path("src/main.zig"),
+        .imports = &.{
+            .{ .name = "aws-lambda", .module = runtime },
+        },
         // .link_libc = true, // Uncomment if glibc is required.
         // .strip = true, // Uncomment if no stack traces are needed.
     });
-    b.installArtifact(exe);
 
-    // Import the runtime module
-    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
-    exe.root_module.addImport("aws-lambda", runtime);
+    // Compile and executable
+    const exe = b.addExecutable(.{
+        .name = "bootstrap", // The executable name must be "bootstrap"!
+        .root_module = mod
+    });
 }
 ```
 
@@ -149,20 +155,27 @@ pub fn build(b: *std.Build) void {
     // Managed architecture target resolver
     const target = lambda.resolveTargetQuery(b, arch);
 
-    // Add the handler’s executable
-    const exe = b.addExecutable(.{
-        .name = "bootstrap", // The executable name must be "bootstrap"!
-        .root_source_file = b.path("src/main.zig"),
+    // Import the runtime module
+    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
+
+    // Create the handler’s module
+    const mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
+        .root_source_file = b.path("src/main.zig"),
+        .imports = &.{
+            .{ .name = "aws-lambda", .module = runtime },
+        },
         // .link_libc = true, // Uncomment if glibc is required.
         // .strip = true, // Uncomment if no stack traces are needed.
     });
-    b.installArtifact(exe);
 
-    // Import the runtime module
-    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
-    exe.root_module.addImport("aws-lambda", runtime);
+    // Compile and executable
+    const exe = b.addExecutable(.{
+        .name = "bootstrap", // The executable name must be "bootstrap"!
+        .root_module = mod
+    });
+    b.installArtifact(exe);
 }
 ```
 

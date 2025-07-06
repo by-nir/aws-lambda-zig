@@ -11,7 +11,8 @@ pub const Arch = enum {
     pub const default = .x86;
 };
 
-/// Creates a Lambda architecture configuration option `-Darch=(x86|arm)` and resolve an appropriate target query.
+/// Creates a Lambda architecture configuration option `-Darch=(x86|arm)` and
+/// resolve an appropriate target query.
 /// Defaults to _x86_.
 pub fn archOption(b: *std.Build) Arch {
     return b.option(Arch, "arch", "Lambda CPU architecture") orelse Arch.default;
