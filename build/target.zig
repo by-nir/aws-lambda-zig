@@ -15,7 +15,13 @@ pub const Arch = enum {
 /// resolve an appropriate target query.
 /// Defaults to _x86_.
 pub fn archOption(b: *std.Build) Arch {
-    return b.option(Arch, "arch", "Lambda CPU architecture") orelse Arch.default;
+    if (b.option(Arch, "arch", "Lambda CPU architecture")) |arch| {
+        return arch;
+    } else {
+        const name = @tagName(Arch.default);
+        std.log.warn("Did not set `-Darch` option, building for {s} architecture", .{name});
+        return Arch.default;
+    }
 }
 
 /// Resolves a target query for the given Lambda architecture.
