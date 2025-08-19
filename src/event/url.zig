@@ -36,65 +36,65 @@ pub const Response = struct {
     /// To return cookies from your function, don't manually add `set-cookie` headers, instead set the `cookies` field.
     headers: []const KeyVal = &.{},
     /// The body of the response.
-    body: ResponseBody = .{ .textual = "" },
+    body: ResponseBody = .{
+        .textual = "",
+    },
 
     /// A pre-encoded response for a HTTP 500 Internal Server Error.
     ///
     /// Usefaul for cases when encoding a dynamic response is impossible (e.g. can’t allocate).
     pub const internal_server_error = "{\"statusCode\":500,body:\"Internal Server Error\"}";
 
-    pub fn encode(self: Response, allocator: Allocator) ![]const u8 {
-        var buffer = std.ArrayList(u8).init(allocator);
+    pub fn encode(self: Response, gpa: Allocator) ![]const u8 {
+        var buffer: std.io.Writer.Allocating = .init(gpa);
         errdefer buffer.deinit();
 
-        const writer = buffer.writer();
-        try writer.writeByte('{');
-
-        try writer.print("\"statusCode\":{d}", .{@intFromEnum(self.status_code)});
+        try buffer.writer.writeByte('{');
+        try buffer.writer.print("\"statusCode\":{d}", .{@intFromEnum(self.status_code)});
 
         if (self.cookies.len > 0) {
-            try writer.writeAll(",\"cookies\":[");
+            try buffer.writer.writeAll(",\"cookies\":[");
             for (self.cookies, 0..) |cookie, i| {
-                if (i != 0) try writer.writeByte(',');
-                try std.json.encodeJsonString(cookie, .{}, writer);
+                if (i != 0) try buffer.writer.writeByte(',');
+                try std.json.Stringify.encodeJsonString(cookie, .{}, &buffer.writer);
             }
-            try writer.writeAll("]");
+            try buffer.writer.writeByte(']');
         }
 
         if (self.headers.len > 0 or self.content_type != null) {
-            try writer.writeAll(",\"headers\":{");
+            try buffer.writer.writeAll(",\"headers\":{");
 
             var has_ct = false;
             if (self.content_type) |ct| {
-                try writer.writeAll("\"Content-Type\":");
-                try std.json.encodeJsonString(ct, .{}, writer);
+                try buffer.writer.writeAll("\"Content-Type\":");
+                try std.json.Stringify.encodeJsonString(ct, .{}, &buffer.writer);
                 has_ct = true;
             }
 
             for (self.headers, 0..) |header, i| {
-                if (has_ct or i != 0) try writer.writeByte(',');
-                try std.json.encodeJsonString(header.key, .{}, writer);
-                try writer.writeByte(':');
-                try std.json.encodeJsonString(header.value, .{}, writer);
+                if (has_ct or i != 0) try buffer.writer.writeByte(',');
+                try std.json.Stringify.encodeJsonString(header.key, .{}, &buffer.writer);
+                try buffer.writer.writeByte(':');
+                try std.json.Stringify.encodeJsonString(header.value, .{}, &buffer.writer);
             }
 
-            try writer.writeAll("}");
+            try buffer.writer.writeByte('}');
         }
 
         switch (self.body) {
             .textual => |s| if (s.len > 0) {
-                try writer.writeAll(",\"body\":");
-                try std.json.encodeJsonString(s, .{}, writer);
+                try buffer.writer.writeAll(",\"body\":");
+                try std.json.Stringify.encodeJsonString(s, .{}, &buffer.writer);
             },
             .binary => |s| if (s.len > 0) {
-                try writer.writeAll(",\"isBase64Encoded\":true");
-                try writer.writeAll(",\"body\":\"");
-                try std.base64.standard.Encoder.encodeWriter(writer, s);
-                try writer.writeByte('"');
+                try buffer.writer.writeAll(",\"isBase64Encoded\":true");
+                try buffer.writer.writeAll(",\"body\":\"");
+                try std.base64.standard.Encoder.encodeWriter(&buffer.writer, s);
+                try buffer.writer.writeByte('"');
             },
         }
 
-        try writer.writeByte('}');
+        try buffer.writer.writeByte('}');
         return buffer.toOwnedSlice();
     }
 };
@@ -121,11 +121,11 @@ test Response {
 
     try testing.expectEqualStrings("{" ++
         \\"statusCode":201,
-        ++
+    ++
         \\"cookies":["Cookie_1=Value1; Expires=21 Oct 2021 07:48 GMT","Cookie_2=Value2; Max-Age=78000"],
-        ++
+    ++
         \\"headers":{"Content-Type":"application/json","Foo-Header":"Bar Value","Baz-Header":"Qux Value"},
-        ++
+    ++
         \\"body":"{\"message\":\"Hello, world!\"}"
     ++ "}", text_encoded);
 
@@ -138,9 +138,9 @@ test Response {
 
     try testing.expectEqualStrings("{" ++
         \\"statusCode":200,
-        ++
+    ++
         \\"isBase64Encoded":true,
-        ++
+    ++
         \\"body":"Zm9vMTA4IQ=="
     ++ "}", binary_encoded);
 }
@@ -156,41 +156,41 @@ test Response {
 ///     .body = .{ .textual = "<h1>Incoming...</h1>" },
 /// });
 /// ```
-pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !void {
+pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !*std.io.Writer {
     // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-runtime/src/requests.rs
     // https://aws.amazon.com/blogs/compute/using-response-streaming-with-aws-lambda-web-adapter-to-optimize-performance
-    try stream.openWith(INTEGRATION_CONTENT_TYPE, "{}", .{StreamingResponse{
+    const writer = try stream.openPrint(INTEGRATION_CONTENT_TYPE, "{f}", .{StreamingResponse{
         .arena = ctx.arena,
         .response = response,
     }});
+
+    _ = try writer.splatByte('\x00', 8);
+    try stream.publish();
+
+    const body = switch (response.body) {
+        inline else => |s| s,
+    };
+
+    if (body.len > 0) {
+        try writer.writeAll(body);
+        try stream.publish();
+    }
+
+    return writer;
 }
 
 const StreamingResponse = struct {
     arena: Allocator,
     response: Response,
 
-    pub fn format(self: StreamingResponse, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: @This(), writer: *std.io.Writer) !void {
         var response = self.response;
         response.body = .{ .textual = "" };
-        const prelude = try response.encode(self.arena);
 
-        try writer.print("{x}\r\n", .{prelude.len});
-        try writer.writeAll(prelude);
-        try writer.writeAll("\r\n");
-
-        try writer.writeAll("8\r\n");
-        try writer.writeByteNTimes('\x00', 8);
-        try writer.writeAll("\r\n");
-
-        const body = switch (self.response.body) {
-            inline else => |s| s,
+        const prelude = response.encode(self.arena) catch {
+            return std.io.Writer.Error.WriteFailed;
         };
-
-        if (body.len > 0) {
-            try writer.print("{x}\r\n", .{body.len});
-            try writer.writeAll(body);
-            try writer.writeAll("\r\n");
-        }
+        try writer.writeAll(prelude);
     }
 };
 
@@ -218,14 +218,14 @@ pub const Request = struct {
     /// An object that contains additional information about the request.
     request_context: RequestContext = .{},
 
-    pub fn init(allocator: Allocator, event: []const u8) !Request {
-        var scanner = Scanner.initCompleteInput(allocator, event);
+    pub fn init(gpa: Allocator, event: []const u8) !Request {
+        var scanner = Scanner.initCompleteInput(gpa, event);
         defer scanner.deinit();
 
         var request = Request{};
-        errdefer request.deinit(allocator);
+        errdefer request.deinit(gpa);
 
-        var it = try json.ObjectIterator.init(allocator, &scanner);
+        var it = try json.ObjectIterator.init(gpa, &scanner);
         errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "rawPath", key)) {
@@ -233,17 +233,17 @@ pub const Request = struct {
             } else if (mem.eql(u8, "rawQueryString", key)) {
                 request.raw_query = try json.nextStringOptional(&scanner, null);
             } else if (mem.eql(u8, "cookies", key)) {
-                request.cookies = try json.nextKeyValList(allocator, &scanner, "=");
+                request.cookies = try json.nextKeyValList(gpa, &scanner, "=");
             } else if (mem.eql(u8, "headers", key)) {
-                request.headers = try json.nextKeyValMap(allocator, &scanner);
+                request.headers = try json.nextKeyValMap(gpa, &scanner);
             } else if (mem.eql(u8, "queryStringParameters", key)) {
-                request.query_parameters = try json.nextKeyValMap(allocator, &scanner);
+                request.query_parameters = try json.nextKeyValMap(gpa, &scanner);
             } else if (mem.eql(u8, "body", key)) {
-                request.body = try json.nextStringOptional(&scanner, allocator);
+                request.body = try json.nextStringOptional(&scanner, gpa);
             } else if (mem.eql(u8, "isBase64Encoded", key)) {
                 request.body_is_base64 = try json.nextBool(&scanner);
             } else if (mem.eql(u8, "requestContext", key)) {
-                request.request_context = try RequestContext.init(allocator, &scanner);
+                request.request_context = try RequestContext.init(gpa, &scanner);
             } else if (mem.eql(u8, "version", key)) {
                 try json.nextStringEqualErr(&scanner, "2.0", error.UnsupportedEventVersion);
             } else if (mem.eql(u8, "routeKey", key)) {
@@ -257,12 +257,12 @@ pub const Request = struct {
         return request;
     }
 
-    pub fn deinit(self: Request, allocator: Allocator) void {
-        json.freeKeyValList(allocator, self.cookies);
-        json.freeKeyValMap(allocator, self.headers);
-        json.freeKeyValMap(allocator, self.query_parameters);
-        if (self.body) |s| allocator.free(s);
-        self.request_context.deinit(allocator);
+    pub fn deinit(self: Request, gpa: Allocator) void {
+        json.freeKeyValList(gpa, self.cookies);
+        json.freeKeyValMap(gpa, self.headers);
+        json.freeKeyValMap(gpa, self.query_parameters);
+        if (self.body) |s| gpa.free(s);
+        self.request_context.deinit(gpa);
     }
 };
 
@@ -373,10 +373,10 @@ pub const RequestContext = struct {
     /// Otherwise, Lambda sets this to `.none`.
     authorizer: RequestAuthorizer = .none,
 
-    fn init(allocator: Allocator, scanner: *Scanner) !RequestContext {
+    fn init(gpa: Allocator, scanner: *Scanner) !RequestContext {
         var context = RequestContext{};
 
-        var it = try json.ObjectIterator.init(allocator, scanner);
+        var it = try json.ObjectIterator.init(gpa, scanner);
         errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "accountId", key)) {
@@ -394,9 +394,9 @@ pub const RequestContext = struct {
             } else if (mem.eql(u8, "timeEpoch", key)) {
                 context.time_epoch = try json.nextNumber(scanner, i64);
             } else if (mem.eql(u8, "http", key)) {
-                context.http = try RequestHttp.init(allocator, scanner);
+                context.http = try RequestHttp.init(gpa, scanner);
             } else if (mem.eql(u8, "authorizer", key)) {
-                context.authorizer = try RequestAuthorizer.from(allocator, scanner);
+                context.authorizer = try RequestAuthorizer.from(gpa, scanner);
             } else if (mem.eql(u8, "routeKey", key)) {
                 try json.nextStringEqualErr(scanner, "$default", error.UnexpectedRouteKey);
             } else if (mem.eql(u8, "stage", key)) {
@@ -409,8 +409,8 @@ pub const RequestContext = struct {
         return context;
     }
 
-    fn deinit(self: RequestContext, allocator: Allocator) void {
-        self.http.deinit(allocator);
+    fn deinit(self: RequestContext, gpa: Allocator) void {
+        self.http.deinit(gpa);
     }
 };
 
@@ -479,15 +479,15 @@ pub const RequestHttp = struct {
     /// The `User-Agent` request header value.
     user_agent: ?[]const u8 = null,
 
-    fn init(allocator: Allocator, scanner: *Scanner) !RequestHttp {
+    fn init(gpa: Allocator, scanner: *Scanner) !RequestHttp {
         var http = RequestHttp{};
 
-        var it = try json.ObjectIterator.init(allocator, scanner);
+        var it = try json.ObjectIterator.init(gpa, scanner);
         errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "method", key)) {
                 const str = try json.nextStringOptional(scanner, null) orelse continue;
-                http.method = @enumFromInt(std.http.Method.parse(str));
+                http.method = parseHttpMethod(str);
             } else if (mem.eql(u8, "path", key)) {
                 http.path = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "protocol", key)) {
@@ -495,7 +495,7 @@ pub const RequestHttp = struct {
             } else if (mem.eql(u8, "sourceIp", key)) {
                 http.source_ip = try json.nextStringOptional(scanner, null);
             } else if (mem.eql(u8, "userAgent", key)) {
-                http.user_agent = try json.nextStringOptional(scanner, allocator);
+                http.user_agent = try json.nextStringOptional(scanner, gpa);
             } else {
                 try scanner.skipValue();
             }
@@ -504,8 +504,8 @@ pub const RequestHttp = struct {
         return http;
     }
 
-    fn deinit(self: RequestHttp, allocator: Allocator) void {
-        if (self.user_agent) |s| allocator.free(s);
+    fn deinit(self: RequestHttp, gpa: Allocator) void {
+        if (self.user_agent) |s| gpa.free(s);
     }
 };
 
@@ -537,14 +537,14 @@ pub const RequestAuthorizer = union(enum) {
     none: void,
     iam: RequestAuthorizerIam,
 
-    fn from(allocator: Allocator, scanner: *Scanner) !RequestAuthorizer {
+    fn from(gpa: Allocator, scanner: *Scanner) !RequestAuthorizer {
         switch (try scanner.peekNextTokenType()) {
             .null => return .none,
             .object_begin => {
                 const u = try json.Union.begin(scanner);
                 if (mem.eql(u8, "iam", u.key)) {
                     const auth = RequestAuthorizer{
-                        .iam = try RequestAuthorizerIam.from(allocator, scanner),
+                        .iam = try RequestAuthorizerIam.from(gpa, scanner),
                     };
                     try u.endErr(error.UnexpectedAuthorizer);
                     return auth;
@@ -608,10 +608,10 @@ pub const RequestAuthorizerIam = struct {
     /// The user ID of the caller identity.
     user_id: ?[]const u8 = null,
 
-    fn from(allocator: Allocator, scanner: *Scanner) !RequestAuthorizerIam {
+    fn from(gpa: Allocator, scanner: *Scanner) !RequestAuthorizerIam {
         var iam = RequestAuthorizerIam{};
 
-        var it = try json.ObjectIterator.init(allocator, scanner);
+        var it = try json.ObjectIterator.init(gpa, scanner);
         errdefer it.deinit();
         while (try it.next()) |key| {
             if (mem.eql(u8, "accessKey", key)) {
@@ -660,4 +660,12 @@ test RequestAuthorizerIam {
         },
         try RequestAuthorizerIam.from(test_alloc, &scanner),
     );
+}
+
+fn parseHttpMethod(str: []const u8) std.http.Method {
+    inline for (comptime std.enums.values(std.http.Method)) |tag| {
+        if (std.mem.eql(u8, @tagName(tag), str)) return tag;
+    } else {
+        unreachable;
+    }
 }

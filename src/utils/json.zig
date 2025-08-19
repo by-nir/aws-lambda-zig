@@ -239,21 +239,21 @@ test ArrayIterator {
 }
 
 pub const ObjectIterator = struct {
-    allocator: Allocator,
+    gpa: Allocator,
     scanner: *Scanner,
     done: bool = false,
     prev_alloc: ?[]const u8 = null,
 
-    pub fn init(allocator: Allocator, scanner: *Scanner) !@This() {
+    pub fn init(gpa: Allocator, scanner: *Scanner) !@This() {
         try nextExpect(scanner, .object_begin);
         return .{
-            .allocator = allocator,
+            .gpa = gpa,
             .scanner = scanner,
         };
     }
 
-    /// Only required to call if deinit before exhausted.
-    /// Safe to call after exhausted.
+    /// Only required when calling before exhausted.
+    /// Safe to call even after exhausted.
     pub fn deinit(self: *@This()) void {
         self.freePrev();
     }
@@ -275,7 +275,7 @@ pub const ObjectIterator = struct {
             return null;
         } else {
             const when: std.json.AllocWhen = if (alloc) .alloc_always else .alloc_if_needed;
-            switch (try self.scanner.nextAlloc(self.allocator, when)) {
+            switch (try self.scanner.nextAlloc(self.gpa, when)) {
                 .object_end => {
                     self.done = true;
                     return null;
@@ -292,7 +292,7 @@ pub const ObjectIterator = struct {
 
     fn freePrev(self: *@This()) void {
         const str = self.prev_alloc orelse return;
-        self.allocator.free(str);
+        self.gpa.free(str);
         self.prev_alloc = null;
     }
 };
@@ -373,27 +373,27 @@ test Union {
 }
 
 /// Call `freeKeyValList` to free the list and its KV pairs.
-pub fn nextKeyValList(allocator: Allocator, scanner: *Scanner, delimeter: []const u8) ![]const KeyVal {
-    var list = std.ArrayList(KeyVal).init(allocator);
+pub fn nextKeyValList(gpa: Allocator, scanner: *Scanner, delimeter: []const u8) ![]const KeyVal {
+    var list: std.ArrayList(KeyVal) = .empty;
     errdefer {
-        for (list.items) |kv| kv.deinitSplitted(allocator);
-        list.deinit();
+        for (list.items) |kv| kv.deinitSplitted(gpa);
+        list.deinit(gpa);
     }
 
     var it = try ArrayIterator.begin(scanner);
     while (try it.next()) {
-        const concat = try nextString(scanner, allocator);
-        errdefer allocator.free(concat);
+        const concat = try nextString(scanner, gpa);
+        errdefer gpa.free(concat);
         const kv = KeyVal.split(concat, delimeter) orelse return inputError();
-        try list.append(kv);
+        try list.append(gpa, kv);
     }
 
-    return list.toOwnedSlice();
+    return list.toOwnedSlice(gpa);
 }
 
-pub fn freeKeyValList(allocator: Allocator, list: []const KeyVal) void {
-    for (list) |kv| kv.deinitSplitted(allocator);
-    allocator.free(list);
+pub fn freeKeyValList(gpa: Allocator, list: []const KeyVal) void {
+    for (list) |kv| kv.deinitSplitted(gpa);
+    gpa.free(list);
 }
 
 test nextKeyValList {
@@ -427,30 +427,30 @@ test nextKeyValList {
 }
 
 /// Call `freeKeyValMap` to free the list and its KV pairs.
-pub fn nextKeyValMap(allocator: Allocator, scanner: *Scanner) ![]const KeyVal {
-    var list = std.ArrayList(KeyVal).init(allocator);
+pub fn nextKeyValMap(gpa: Allocator, scanner: *Scanner) ![]const KeyVal {
+    var list: std.ArrayList(KeyVal) = .empty;
     errdefer {
-        for (list.items) |kv| kv.deinit(allocator);
-        list.deinit();
+        for (list.items) |kv| kv.deinit(gpa);
+        list.deinit(gpa);
     }
 
-    var it = try ObjectIterator.init(allocator, scanner);
+    var it = try ObjectIterator.init(gpa, scanner);
     errdefer it.deinit();
     while (try it.nextAlloc()) |key| {
         const kv = KeyVal{
             .key = key,
-            .value = try nextString(scanner, allocator),
+            .value = try nextString(scanner, gpa),
         };
-        errdefer kv.deinit(allocator);
-        try list.append(kv);
+        errdefer kv.deinit(gpa);
+        try list.append(gpa, kv);
     }
 
-    return list.toOwnedSlice();
+    return list.toOwnedSlice(gpa);
 }
 
-pub fn freeKeyValMap(allocator: Allocator, list: []const KeyVal) void {
-    for (list) |kv| kv.deinit(allocator);
-    allocator.free(list);
+pub fn freeKeyValMap(gpa: Allocator, list: []const KeyVal) void {
+    for (list) |kv| kv.deinit(gpa);
+    gpa.free(list);
 }
 
 test nextKeyValMap {

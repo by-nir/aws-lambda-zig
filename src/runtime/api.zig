@@ -80,11 +80,11 @@ pub fn streamInvocationOpen(
     client: *Client,
     req_id: []const u8,
     content_type: []const u8,
-    comptime raw_http_prelude: []const u8,
-    args: anytype,
-) Error!Client.Request {
+    comptime prelude_raw_http: []const u8,
+    prelude_args: anytype,
+) Error!struct { Client.Request, Client.BodyWriter } {
     const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Success");
-    return client.streamOpen(path, .{
+    return client.openStream(path, .{
         .request = .{
             .authorization = .omit,
             .accept_encoding = .omit,
@@ -92,10 +92,9 @@ pub fn streamInvocationOpen(
         },
         .headers = &[_]Client.Header{
             .{ .name = STREAM_HEAD_NAME, .value = STREAM_HEAD_VAL },
-            .{ .name = "Trailer", .value = ERROR_HEAD_TYPE },
-            .{ .name = "Trailer", .value = ERROR_HEAD_BODY },
+            .{ .name = "Trailer", .value = ERROR_HEAD_TYPE ++ "," ++ ERROR_HEAD_BODY },
         },
-    }, raw_http_prelude, args) catch |e| {
+    }, prelude_raw_http, prelude_args) catch |e| {
         log.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
@@ -105,34 +104,37 @@ pub fn streamInvocationOpen(
 ///
 /// Trailer headers are optional.
 pub fn streamInvocationClose(
-    req: *Client.Request,
     arena: Allocator,
+    req: *Client.Request,
+    body: *Client.BodyWriter,
     err_req: ?ErrorRequest,
 ) Error!InvocationSuccessResult {
-    const trailer: ?[]const Client.Header = if (err_req) |err| blk: {
+    var headers: [2]Client.Header = undefined;
+    const trailers: []const Client.Header = if (err_req) |err| blk: {
         const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.type)}) catch |e| {
             log.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
 
-        const body = formatError(arena, "Handler", err) catch |e| {
+        const value = formatError(arena, "Handler", err) catch |e| {
             log.err("[Send Error] Formatting error body failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
-        const size = std.base64.standard.Encoder.calcSize(body.len);
-        const body_encoded = arena.alloc(u8, size) catch |e| {
+        const size = std.base64.standard.Encoder.calcSize(value.len);
+        const value_encoded = arena.alloc(u8, size) catch |e| {
             log.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
-        _ = std.base64.standard.Encoder.encode(body_encoded, body);
+        _ = std.base64.standard.Encoder.encode(value_encoded, value);
 
-        break :blk &[_]Client.Header{
+        headers = .{
             .{ .name = ERROR_HEAD_TYPE, .value = err_type },
-            .{ .name = ERROR_HEAD_BODY, .value = body_encoded },
+            .{ .name = ERROR_HEAD_BODY, .value = value_encoded },
         };
-    } else null;
+        break :blk &headers;
+    } else &.{};
 
-    var result = Client.streamClose(arena, req, trailer) catch |e| {
+    var result = Client.closeStream(arena, req, body, trailers) catch |e| {
         log.err("[Stream Request] Client failed closing: {s}", .{@errorName(e)});
         return error.ClientError;
     };
@@ -203,18 +205,17 @@ fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]
 }
 
 fn formatError(arena: Allocator, err_category: []const u8, err: ErrorRequest) ![]const u8 {
-    var buffer = std.ArrayList(u8).init(arena);
-    const writer = buffer.writer();
+    var buffer: std.io.Writer.Allocating = .init(arena);
 
-    try writer.print(
+    try buffer.writer.print(
         \\{{"errorType":"{s}.
     , .{err_category});
-    try std.json.encodeJsonStringChars(@errorName(err.type), .{}, writer);
-    try writer.writeAll(
+    try std.json.Stringify.encodeJsonStringChars(@errorName(err.type), .{}, &buffer.writer);
+    try buffer.writer.writeAll(
         \\","errorMessage":"
     );
-    try std.json.encodeJsonStringChars(err.message, .{}, writer);
-    try writer.writeAll(
+    try std.json.Stringify.encodeJsonStringChars(err.message, .{}, &buffer.writer);
+    try buffer.writer.writeAll(
         \\","stackTrace":[]}
     );
 

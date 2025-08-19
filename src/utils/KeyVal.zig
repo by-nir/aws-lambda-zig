@@ -9,8 +9,8 @@ const KeyVal = @This();
 key: []const u8,
 value: []const u8,
 
-pub fn join(self: KeyVal, allocator: Allocator, delimeter: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ self.key, delimeter, self.value });
+pub fn join(self: KeyVal, gpa: Allocator, delimeter: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(gpa, "{s}{s}{s}", .{ self.key, delimeter, self.value });
 }
 
 test join {
@@ -25,9 +25,9 @@ test join {
     try testing.expectEqualStrings("foo=bar", concat);
 }
 
-pub fn deinit(self: KeyVal, allocator: Allocator) void {
-    allocator.free(self.key);
-    allocator.free(self.value);
+pub fn deinit(self: KeyVal, gpa: Allocator) void {
+    gpa.free(self.key);
+    gpa.free(self.value);
 }
 
 test deinit {
@@ -61,11 +61,11 @@ test split {
     }, split("foo::bar", "::"));
 }
 
-pub fn deinitSplitted(self: KeyVal, allocator: Allocator) void {
+pub fn deinitSplitted(self: KeyVal, gpa: Allocator) void {
     const start = self.key.ptr;
     const len = (self.value.ptr + self.value.len) - start;
     const slice = start[0..][0..len];
-    allocator.free(slice);
+    gpa.free(slice);
 }
 
 test deinitSplitted {

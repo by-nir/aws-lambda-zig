@@ -1,5 +1,5 @@
 # AWS Lambda Runtime for Zig
-![Zig v0.14 (dev)](https://img.shields.io/badge/Zig-v0.14_(dev)-black?logo=zig&logoColor=F7A41D "Zig v0.14 – master branch")
+![Zig v0.15](https://img.shields.io/badge/Zig-v0.15-black?logo=zig&logoColor=F7A41D "Zig v0.15")
 [![MIT License](https://img.shields.io/github/license/by-nir/aws-lambda-zig)](/LICENSE)
 
 Write _AWS Lambda_ functions in the Zig programming language to achieve blazing fast invocations and cold starts!
@@ -349,11 +349,8 @@ _Closing the stream is not required._
 | Method | Description |
 | ------ | ----------- |
 | `stream.open(content_type)` | Opens the response stream for a provided HTTP content type. |
-| `stream.openWith(content_type, raw_http_format, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
-| `stream.writer()` | Writer for appending to the response buffer. |
-| `stream.write(message)` | Appends a message to the response buffer. |
-| `stream.flush()` | Publish the response buffer to the client. |
-| `stream.publish(message)` | Appends a message to the buffer and **immediatly** publish it to the client. |
+| `stream.openPrint(content_type, fmt, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
+| `stream.publish()` | Send the partial response buffer to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
 
 ### Lifecycle Hooks

@@ -135,7 +135,7 @@ pub const Server = struct {
 
     pub fn respondFailure(self: *Server, err: anyerror, trace: ?*std.builtin.StackTrace) !void {
         if (trace) |t| {
-            log.err("The handler returned an error `{s}`.{?}", .{ @errorName(err), t });
+            log.err("The handler returned an error `{s}`.{f}", .{ @errorName(err), t });
         } else {
             log.err("The handler returned an error `{s}`.", .{@errorName(err)});
         }
@@ -159,8 +159,8 @@ pub const Server = struct {
     }
 
     pub fn respondSuccess(self: *Server, output: []const u8) !void {
-        const alloc = self.arena.allocator();
-        const result = api.sendInvocationSuccess(alloc, &self.http, self.request_id, output) catch |err| {
+        const arena = self.arena.allocator();
+        const result = api.sendInvocationSuccess(arena, &self.http, self.request_id, output) catch |err| {
             return logErrorName("Sending the invocation’s output failed: {s}", err);
         };
 
@@ -175,46 +175,46 @@ pub const Server = struct {
     pub fn streamSuccess(
         self: *Server,
         content_type: []const u8,
-        comptime raw_http_prelude: []const u8,
-        args: anytype,
+        comptime prelude_raw_http: []const u8,
+        prelude_args: anytype,
     ) !Stream {
-        const alloc = self.arena.allocator();
-        const request = api.streamInvocationOpen(
-            alloc,
+        const arena = self.arena.allocator();
+
+        const request, const body = api.streamInvocationOpen(
+            arena,
             &self.http,
             self.request_id,
             content_type,
-            raw_http_prelude,
-            args,
+            prelude_raw_http,
+            prelude_args,
         ) catch |err| {
             return logErrorName("Opening a stream failed: {s}", err);
         };
 
         return .{
+            .arena = arena,
             .req = request,
-            .arena = alloc,
+            .body = body,
         };
     }
 
     pub const Stream = struct {
         req: HttpClient.Request,
+        body: std.http.BodyWriter,
         arena: std.mem.Allocator,
 
-        pub const Writer = std.http.Client.Request.Writer;
-
-        pub fn writer(self: *Stream) Writer {
-            return self.req.writer();
+        pub fn writer(self: *Stream) *std.io.Writer {
+            return &self.body.writer;
         }
 
         pub fn flush(self: *Stream) !void {
-            const conn = self.req.connection.?;
-            conn.flush() catch |err| {
+            self.body.flush() catch |err| {
                 return logErrorName("Flushing the stream’s buffer failed: {s}", err);
             };
         }
 
         pub fn close(self: *Stream, err: ?api.ErrorRequest) !void {
-            const result = api.streamInvocationClose(&self.req, self.arena, err) catch |e| {
+            const result = api.streamInvocationClose(self.arena, &self.req, &self.body, err) catch |e| {
                 return logErrorName("Closing the stream failed: {s}", e);
             };
 

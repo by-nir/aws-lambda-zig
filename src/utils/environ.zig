@@ -1,8 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub fn load(env: *std.process.EnvMap, allocator: Allocator) !void {
-    env.* = std.process.EnvMap.init(allocator);
+pub fn load(env: *std.process.EnvMap, gpa: Allocator) !void {
+    env.* = std.process.EnvMap.init(gpa);
     if (@import("builtin").link_libc) {
         var ptr = std.c.environ;
         while (ptr[0]) |line| : (ptr += 1) try parseAndPutVar(env, line);

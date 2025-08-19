@@ -5,7 +5,7 @@ const std = @import("std");
 const mem = std.mem;
 const lambda = @import("aws-lambda");
 
-const content_type = lambda.KeyVal{
+const content_type: lambda.KeyVal = .{
     .key = "Content-Type",
     .value = "text/html; charset=utf-8",
 };
@@ -19,7 +19,7 @@ pub fn main() void {
 fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
     // Decode the Lambda URLs event.
     // We pass an arena allocator, so we don’t need to deinit.
-    const request = try lambda.url.Request.init(ctx.arena, event);
+    const request: lambda.url.Request = try .init(ctx.arena, event);
 
     // Use the router the serve dynamic content based on the event’s request.
     // If rendering the response fails, we instead return an error page.
@@ -63,7 +63,7 @@ fn router(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
 
 /// Static HTML response containing links to other pages.
 fn homePage(ctx: lambda.Context) ![]const u8 {
-    const response = lambda.url.Response{
+    const response: lambda.url.Response = .{
         .headers = &.{
             content_type,
             // This page is static, so we can ask for it to be cached for a while.
@@ -82,7 +82,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
         \\  <li>🕵️‍♂️ <a href="/oops">Dude, where is my web page?</a></li>
         \\  <li>🧨 <a href="/crash">500</a></li>
         \\</ul>
-        },
+    },
     };
     return response.encode(ctx.arena);
 }
@@ -90,25 +90,29 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
 /// The `url.Request` contains both the HTTP request and additional AWS metadata.
 fn ipAddrPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
     // Generate dynamic HTML content, note the usage of an arena allocator.
-    var html = std.ArrayList(u8).init(ctx.arena);
-    try html.appendSlice(global_nav);
+    var html: std.io.Writer.Allocating = .init(ctx.arena);
+
+    try html.writer.writeAll(global_nav);
     if (req.request_context.http.source_ip) |addr| {
-        try html.writer().print("<p>Your IP address is: <mark>{s}</mark></p>", .{addr});
+        try html.writer.print("<p>Your IP address is: <mark>{s}</mark></p>", .{addr});
     } else {
-        try html.appendSlice("<p>Sorry, I don't know your IP address.</p>");
+        try html.writer.writeAll("<p>Sorry, I don’t know your IP address.</p>");
     }
 
     const response = lambda.url.Response{
         .headers = &.{content_type},
-        .body = .{ .textual = try html.toOwnedSlice() },
+        .body = .{
+            .textual = try html.toOwnedSlice(),
+        },
     };
     return response.encode(ctx.arena);
 }
 
 /// Use a parsed query parameter provided by the decoded request to greet the user.
 fn greetPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
-    var html = std.ArrayList(u8).init(ctx.arena);
-    try html.appendSlice(global_nav);
+    var html: std.io.Writer.Allocating = .init(ctx.arena);
+
+    try html.writer.writeAll(global_nav);
 
     const name = blk: {
         // Is the `name` parameter present in the query?
@@ -119,14 +123,16 @@ fn greetPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
 
         break :blk "world"; // Default value
     };
-    try html.writer().print("<h1>Hello, {s}!</h1>", .{name});
+    try html.writer.print("<h1>Hello, {s}!</h1>", .{name});
 
-    try html.writer().writeAll("\n\n");
-    try html.writer().writeAll("<p><em>Hint:</em> Change the <code>name</code> parameter in the URL...</p>");
+    try html.writer.writeAll("\n\n");
+    try html.writer.writeAll("<p><em>Hint:</em> Change the <code>name</code> parameter in the URL...</p>");
 
     const response = lambda.url.Response{
         .headers = &.{content_type},
-        .body = .{ .textual = try html.toOwnedSlice() },
+        .body = .{
+            .textual = try html.toOwnedSlice(),
+        },
     };
     return response.encode(ctx.arena);
 }
@@ -159,19 +165,20 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         }
 
         // Encode the cookie value
-        var new_cookie = std.ArrayList(u8).init(ctx.arena);
-        try new_cookie.writer().writeAll("store=");
-        try std.base64.standard.Encoder.encodeWriter(new_cookie.writer(), value);
-        try new_cookie.writer().writeAll("; Path=/cookiejar; Max-Age=432000; HttpOnly; Secure; SameSite=Lax");
+        var new_cookie: std.io.Writer.Allocating = .init(ctx.arena);
+        errdefer new_cookie.deinit();
+        try new_cookie.writer.writeAll("store=");
+        try std.base64.standard.Encoder.encodeWriter(&new_cookie.writer, value);
+        try new_cookie.writer.writeAll("; Path=/cookiejar; Max-Age=432000; HttpOnly; Secure; SameSite=Lax");
         set_cookies = &.{
             try new_cookie.toOwnedSlice(),
         };
     }
 
     // Render a form to display and update the stored value.
-    var html = std.ArrayList(u8).init(ctx.arena);
-    try html.appendSlice(global_nav);
-    try html.writer().print(
+    var html: std.io.Writer.Allocating = .init(ctx.arena);
+    try html.writer.writeAll(global_nav);
+    try html.writer.print(
         \\<form>
         \\  <label for="store">Stored value:</label>
         \\  <input type="text" id="store" name="store" value="{s}" minlength="1" maxlength="{d}" required />
@@ -182,7 +189,9 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
     const response = lambda.url.Response{
         .headers = &.{content_type},
         .cookies = set_cookies,
-        .body = .{ .textual = try html.toOwnedSlice() },
+        .body = .{
+            .textual = try html.toOwnedSlice(),
+        },
     };
     return response.encode(ctx.arena);
 }
@@ -216,7 +225,9 @@ fn errorPage(ctx: lambda.Context, path: []const u8) ![]const u8 {
     const response = lambda.url.Response{
         .status_code = .not_found, // HTTP 404
         .headers = &.{content_type},
-        .body = .{ .textual = html },
+        .body = .{
+            .textual = html,
+        },
     };
     return response.encode(ctx.arena);
 }
@@ -240,7 +251,9 @@ fn internalErrorPage(ctx: lambda.Context, err: anyerror) ![]const u8 {
     const response = lambda.url.Response{
         .status_code = .internal_server_error, // HTTP 500
         .headers = &.{content_type},
-        .body = .{ .textual = html },
+        .body = .{
+            .textual = html,
+        },
     };
     return response.encode(ctx.arena);
 }
