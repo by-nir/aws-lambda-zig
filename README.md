@@ -315,26 +315,25 @@ fn handler(
     stream: lambda.Stream,  // Stream delegate
 ) !void {
     // Start streaming the response for a given content type.
-    try stream.open("text/event-stream");
+    const writer = try stream.open("text/event-stream");
 
     // Append to the streaming buffer.
-    try stream.write("data: Message");
-    try stream.writeFmt(" number {d}\n\n", .{1});
+    try writer.writeAll("data: Message");
+    try writer.print(" number {d}\n\n", .{1});
 
-    // Publish the buffer to the client.
-    try stream.flush();
+    // Send the buffer to the client.
+    try stream.publish();
 
     // Wait for half a second.
-    std.time.sleep(500_000_000);
+    std.Thread.sleep(500_000_000);
 
-    // Append to streaming buffer and immediatly publish to the client.
-    try stream.publish("data: Message number 2\n\n");
-    std.time.sleep(100_000_000);
-
-    // Publish also supports formatting.
-    try stream.publishFmt("data: Message number {d}\n\n", .{3});
+    // Send additional content to the client.
+    try writer.writeAll("data: Message number 2\n\n");
+    try writer.writeAll("data: Message number 3\n\n");
+    try stream.publish();
 
     // Optionally close the stream.
+    // Even after ending the response we can still do more work in the handler.
     try stream.close();
 }
 ```
