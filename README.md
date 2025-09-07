@@ -8,6 +8,15 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 [📒 Documentation](#documentation) ·
 [💽 Demos](#demos)
 
+## Benchmark
+Using zig allows creating small and fast functions.<br />
+Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
+
+- ❄️ `~11ms` cold start invocation duration
+- ⚡ `~1.5ms` warm invocation duration
+- 💾 `12 MiB` max memory consumption
+- ⚖️ `0.36 MiB` function size (zip)
+
 ## Features
 - [x] Runtime API
 - [ ] Extensions API
@@ -31,20 +40,6 @@ _Feel free to open an issue for additional integrations, or better contribute a 
 - [ ] SNS
 - [ ] DynamoDB
 - [ ] Data Firehose
-
-### Benchmark
-Using zig allows creating small and fast functions.<br />
-Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
-
-- ❄️ `~11ms` cold start invocation duration
-- ⚡ `~1.5ms` warm invocation duration
-- 💾 `12 MiB` max memory consumption
-- ⚖️ `0.36 MiB` function size (zip)
-
-
-> [!TIP]
-> Check out [AWS SDK for Zig](https://github.com/by-nir/aws-sdk-zig) for a
-> comprehensive Zig-based AWS cloud solution.
 
 ## Quick Start
 1. Add a dependency to your project (replace `VERSION` with the desired version tag):
