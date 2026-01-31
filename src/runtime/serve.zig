@@ -23,7 +23,7 @@ pub const Server = struct {
     threaded: std.Io.Threaded,
     io: std.Io,
     http: HttpClient,
-    env: std.process.EnvMap,
+    env: std.process.Environ.Map,
     request_id: []const u8 = "",
 
     pub fn init(self: *Server, _: Options) !void {
@@ -50,8 +50,15 @@ pub const Server = struct {
             return initFailed(arena_alloc, null, error.MissingRuntimeOrigin, "Missing the runtime’s API origin URL");
         };
 
+        const process_environ: std.process.Environ = if (@import("builtin").link_libc)
+            .{ .block = std.c.environ }
+        else
+            .empty;
+
         // Initialize threaded IO - owned by Server
-        self.threaded = std.Io.Threaded.init(gpa_alloc, .{});
+        self.threaded = std.Io.Threaded.init(gpa_alloc, .{
+            .environ = process_environ,
+        });
         errdefer self.threaded.deinit();
 
         self.io = self.threaded.io();

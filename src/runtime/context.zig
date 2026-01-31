@@ -21,7 +21,7 @@ pub const Context = struct {
     request: RequestMeta = .{},
     io: *const std.Io,
     _force_destroy: *bool,
-    _kv: *const std.process.EnvMap = undefined,
+    _kv: *const std.process.Environ.Map = undefined,
 
     /// Return the environmant value associated with a key.
     pub fn env(self: Context, key: []const u8) ?[]const u8 {
@@ -102,7 +102,7 @@ pub const Context = struct {
 
 /// Returns the URL (host and port) of the Runtime API.
 /// https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html
-pub fn loadMeta(ctx: *Context, env: *const std.process.EnvMap) void {
+pub fn loadMeta(ctx: *Context, env: *const std.process.Environ.Map) void {
     const cfg = &ctx.config;
     ctx._kv = env;
 
