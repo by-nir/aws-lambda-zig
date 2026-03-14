@@ -9,7 +9,7 @@ pub fn main() void {
 }
 
 /// 0.5 seconds (in nanoseconds)
-const HALF_SEC = 0.5 * std.time.ns_per_s;
+const HALF_SEC = std.time.ns_per_s / 2;
 
 fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void {
     // Decode the Lambda URLs event.
@@ -41,28 +41,28 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
     });
 
     // Wait for half a second.
-    std.Thread.sleep(HALF_SEC);
+    try sleepHalfSecond();
 
     // Append multiple to the stream’s buffer without publishing to the client.
     try writer.writeAll("<h2>Update #1</h2>");
-    try writer.print("<p>Current epoch: <time>{d}</time></p>", .{std.time.timestamp()});
+    try writer.print("<p>Current epoch: <time>{d}</time></p>", .{currentEpochSeconds()});
 
     // Publish the buffered data to the client.
     try stream.publish();
-    std.Thread.sleep(HALF_SEC);
+    try sleepHalfSecond();
 
     try writer.writeAll(
         \\<h2>Update #2</h2>
         \\<p>Current epoch: 🕰️</p>
     );
     try stream.publish();
-    std.Thread.sleep(HALF_SEC);
+    try sleepHalfSecond();
 
     // One last message to the client...
     try writer.print(
         \\<h2>Update #{d}</h2>
         \\<p>Current epoch: <time>{d}</time></p>
-    , .{ 3, std.time.timestamp() });
+    , .{ 3, currentEpochSeconds() });
     try stream.publish();
 
     // We can optionally let the runtime know we have finished the response.
@@ -75,4 +75,15 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
 
 fn doSomeCleanup() void {
     // Some cleanup work...
+}
+
+fn sleepHalfSecond() !void {
+    try std.Io.Clock.Duration.sleep(.{
+        .clock = .awake,
+        .raw = .fromNanoseconds(HALF_SEC),
+    }, std.Options.debug_io);
+}
+
+fn currentEpochSeconds() i64 {
+    return std.Io.Clock.real.now(std.Options.debug_io).toSeconds();
 }
