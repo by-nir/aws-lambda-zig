@@ -18,7 +18,7 @@ pub const InvocationResult = enum {
 pub const Options = struct {};
 
 pub const Server = struct {
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
+    gpa: std.heap.DebugAllocator(.{}),
     arena: std.heap.ArenaAllocator,
     threaded: std.Io.Threaded,
     io: std.Io,
@@ -29,7 +29,7 @@ pub const Server = struct {
     pub fn init(self: *Server, _: Options) !void {
         errdefer self.* = undefined;
 
-        self.gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        self.gpa = .init;
         const gpa_alloc = self.gpa.allocator();
         errdefer _ = self.gpa.deinit();
 
