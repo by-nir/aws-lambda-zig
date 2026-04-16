@@ -133,6 +133,10 @@ fn prepareHeaders(request: Request.Headers) Request.Headers {
 }
 
 fn parseResponse(arena: Allocator, res: *Client.Response) !Result {
+    // The header’s bytes MUST be consumed prior to initializing the body reader,
+    // otherwise the pointer will be invalidated.
+    const headers = try arena.dupe(u8, res.head.bytes);
+
     var transfer_buffer: [64]u8 = undefined;
     const reader = res.reader(&transfer_buffer);
 
@@ -141,8 +145,6 @@ fn parseResponse(arena: Allocator, res: *Client.Response) !Result {
         error.ReadFailed => return res.bodyErr().?,
         else => |e| return e,
     };
-
-    const headers = try arena.dupe(u8, res.head.bytes);
 
     return .{
         .status = res.head.status,
