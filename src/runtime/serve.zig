@@ -1,12 +1,11 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const api = @import("api.zig");
 const ctx = @import("context.zig");
 const HttpClient = @import("../utils/Http.zig");
-const environ = @import("../utils/environ.zig");
 const log = @import("../utils/log.zig").runtime;
 
-pub const ProcessorFn = *const fn (server: *Server, ctx: ctx.Context, event: []const u8) InvocationResult;
+pub const ProcessorFn =
+    *const fn (server: *Server, ctx: ctx.Context, event: []const u8) InvocationResult;
 
 pub const InvocationResult = enum {
     /// The runtime may process another event.
@@ -18,72 +17,68 @@ pub const InvocationResult = enum {
 pub const Options = struct {};
 
 pub const Server = struct {
-    gpa: std.heap.DebugAllocator(.{}),
+    gpa: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
     threaded: std.Io.Threaded,
     io: std.Io,
     http: HttpClient,
-    env: std.process.Environ.Map,
+    env: *const std.process.Environ.Map,
     request_id: []const u8 = "",
 
-    pub fn init(self: *Server, _: Options) !void {
+    pub fn init(self: *@This(), proc_init: std.process.Init, _: Options) !void {
         errdefer self.* = undefined;
 
-        self.gpa = .init;
-        const gpa_alloc = self.gpa.allocator();
-        errdefer _ = self.gpa.deinit();
+        self.gpa = proc_init.gpa;
+        self.env = proc_init.environ_map;
 
-        const child_alloc = if (@import("builtin").is_test) std.testing.allocator else std.heap.page_allocator;
-        self.arena = std.heap.ArenaAllocator.init(child_alloc);
-        const arena_alloc = self.arena.allocator();
-        errdefer self.arena.deinit();
+        self.arena = blk: {
+            const child_alloc =
+                if (@import("builtin").is_test)
+                    std.testing.allocator
+                else
+                    std.heap.page_allocator;
 
-        environ.load(&self.env, gpa_alloc) catch |err| {
-            return initFailed(arena_alloc, null, err, "Loading the environment variables failed");
+            break :blk .init(child_alloc);
         };
-        errdefer self.env.deinit();
+        errdefer self.arena.deinit();
 
         const api_origin = blk: {
             const origin = self.env.get(api.ENV_ORIGIN);
             if (origin) |o| if (o.len > 0) break :blk o;
 
-            return initFailed(arena_alloc, null, error.MissingRuntimeOrigin, "Missing the runtime’s API origin URL");
+            return initFailed(
+                self.arena.allocator(),
+                null,
+                error.MissingRuntimeOrigin,
+                "Missing the runtime’s API origin URL",
+            );
         };
 
-        const process_environ: std.process.Environ = if (@import("builtin").link_libc)
-            .{ .block = std.c.environ }
-        else
-            .empty;
-
         // Initialize threaded IO - owned by Server
-        self.threaded = std.Io.Threaded.init(gpa_alloc, .{
-            .environ = process_environ,
+        self.threaded = std.Io.Threaded.init(self.gpa, .{
+            .environ = proc_init.minimal.environ,
         });
         errdefer self.threaded.deinit();
 
         self.io = self.threaded.io();
 
-        HttpClient.init(&self.http, gpa_alloc, api_origin, self.io) catch |err| {
-            return initFailed(arena_alloc, null, err, "Creating a HTTP client failed");
+        HttpClient.init(&self.http, self.gpa, api_origin, self.io) catch |err| {
+            return initFailed(self.arena.allocator(), null, err, "Creating a HTTP client failed");
         };
     }
 
-    pub fn deinit(self: *Server) void {
+    pub fn deinit(self: *@This()) void {
         self.http.deinit();
-        self.env.deinit();
         self.arena.deinit();
         self.threaded.deinit();
-
-        switch (self.gpa.deinit()) {
-            .ok => {},
-            .leak => {
-                // In debug mode we warn about leaks when the function instance terminates.
-                log.warn("The GPA allocator detected a leak when terminating the instance.", .{});
-            },
-        }
     }
 
-    fn initFailed(arena: Allocator, http: ?*HttpClient, err: anyerror, message: []const u8) anyerror {
+    fn initFailed(
+        arena: std.mem.Allocator,
+        http: ?*HttpClient,
+        err: anyerror,
+        message: []const u8,
+    ) anyerror {
         log.err("[Init] {s}: {s}", .{ message, @errorName(err) });
         const h2p = http orelse return err;
 
@@ -93,14 +88,22 @@ pub const Server = struct {
         };
 
         const result = api.sendInitFail(arena, h2p, request) catch |e| {
-            log.err("Sending the initialization’s error report failed: {s}", .{@errorName(e)});
-            return err; // Intentional `err` instead of `e`
+            log.err(
+                "Sending the initialization’s error report failed: {s}",
+                .{@errorName(e)},
+            );
+
+            // Intentional return `err` instead of `e`.
+            return err;
         };
 
         switch (result) {
             .accepted => {},
             .forbidden => |e| {
-                log.err("Sending the initialization’s error report failed: {s}.\n{s}", .{ e.type, e.message });
+                log.err(
+                    "Sending the initialization’s error report failed: {s}.\n{s}",
+                    .{ e.type, e.message },
+                );
             },
         }
 
@@ -108,15 +111,15 @@ pub const Server = struct {
     }
 
     /// Event loop – request and invocate events sequentially.
-    pub fn listen(self: *Server, processorFn: ProcessorFn) void {
+    pub fn listen(self: *@This(), processorFn: ProcessorFn) void {
         var force_terminate = false;
         var context = ctx.Context{
-            .gpa = self.gpa.allocator(),
+            .gpa = self.gpa,
             .arena = self.arena.allocator(),
             ._force_destroy = &force_terminate,
             .io = &self.io,
         };
-        ctx.loadMeta(&context, &self.env);
+        ctx.loadMeta(&context, self.env);
 
         // Request the next event
         while (api.sendInvocationNext(self.arena.allocator(), &self.http)) |next| {
@@ -124,7 +127,10 @@ pub const Server = struct {
             switch (next) {
                 // Failed retrieving the event
                 .forbidden => |err| {
-                    log.err("Requesting the next invocation failed: {s}.\n{s}", .{ err.type, err.message });
+                    log.err(
+                        "Requesting the next invocation failed: {s}.\n{s}",
+                        .{ err.type, err.message },
+                    );
                 },
 
                 // Update event-specific metadata
@@ -150,7 +156,7 @@ pub const Server = struct {
         }
     }
 
-    pub fn respondFailure(self: *Server, err: anyerror, trace: ?*std.builtin.StackTrace) !void {
+    pub fn respondFailure(self: *@This(), err: anyerror, trace: ?*std.builtin.StackTrace) !void {
         if (trace) |_| {
             log.err("The handler returned an error `{s}`.", .{@errorName(err)});
         } else {
@@ -163,50 +169,58 @@ pub const Server = struct {
         };
 
         const alloc = self.arena.allocator();
-        const result = api.sendInvocationFail(alloc, &self.http, self.request_id, request) catch |e| {
-            return logErrorName("Sending the invocation’s error report failed: {s}", e);
-        };
+        const result =
+            api.sendInvocationFail(alloc, &self.http, self.request_id, request) catch |e| {
+                return logErrorName("Sending the invocation’s error report failed: {s}", e);
+            };
 
         switch (result) {
             .accepted => {},
             .bad_request, .forbidden => |e| {
-                log.err("Sending the invocation’s error report failed: {s}.\n{s}", .{ e.type, e.message });
+                log.err(
+                    "Sending the invocation’s error report failed: {s}.\n{s}",
+                    .{ e.type, e.message },
+                );
             },
         }
     }
 
-    pub fn respondSuccess(self: *Server, output: []const u8) !void {
+    pub fn respondSuccess(self: *@This(), output: []const u8) !void {
         const arena = self.arena.allocator();
-        const result = api.sendInvocationSuccess(arena, &self.http, self.request_id, output) catch |err| {
-            return logErrorName("Sending the invocation’s output failed: {s}", err);
-        };
+        const result =
+            api.sendInvocationSuccess(arena, &self.http, self.request_id, output) catch |err| {
+                return logErrorName("Sending the invocation’s output failed: {s}", err);
+            };
 
         switch (result) {
             .accepted => {},
             .bad_request, .forbidden, .payload_too_large => |err| {
-                log.err("Sending the invocation response failed: {s}.\n{s}", .{ err.type, err.message });
+                log.err(
+                    "Sending the invocation response failed: {s}.\n{s}",
+                    .{ err.type, err.message },
+                );
             },
         }
     }
 
     pub fn streamSuccess(
-        self: *Server,
+        self: *@This(),
         content_type: []const u8,
         comptime prelude_raw_http: []const u8,
         prelude_args: anytype,
     ) !Stream {
         const arena = self.arena.allocator();
-
-        const request, const body = api.streamInvocationOpen(
-            arena,
-            &self.http,
-            self.request_id,
-            content_type,
-            prelude_raw_http,
-            prelude_args,
-        ) catch |err| {
-            return logErrorName("Opening a stream failed: {s}", err);
-        };
+        const request, const body =
+            api.streamInvocationOpen(
+                arena,
+                &self.http,
+                self.request_id,
+                content_type,
+                prelude_raw_http,
+                prelude_args,
+            ) catch |err| {
+                return logErrorName("Opening a stream failed: {s}", err);
+            };
 
         return .{
             .arena = arena,
@@ -231,14 +245,18 @@ pub const Server = struct {
         }
 
         pub fn close(self: *Stream, err: ?api.ErrorRequest) !void {
-            const result = api.streamInvocationClose(self.arena, &self.req, &self.body, err) catch |e| {
-                return logErrorName("Closing the stream failed: {s}", e);
-            };
+            const result =
+                api.streamInvocationClose(self.arena, &self.req, &self.body, err) catch |e| {
+                    return logErrorName("Closing the stream failed: {s}", e);
+                };
 
             switch (result) {
                 .accepted => {},
                 .bad_request, .forbidden, .payload_too_large => |e| {
-                    log.err("Closing the stream failed: {s}.\n{s}", .{ e.type, e.message });
+                    log.err(
+                        "Closing the stream failed: {s}.\n{s}",
+                        .{ e.type, e.message },
+                    );
                 },
             }
         }

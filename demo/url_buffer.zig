@@ -12,8 +12,8 @@ const content_type: lambda.KeyVal = .{
 
 const global_nav = "<nav><a href=\"/\">← Homepage</a></nav>\n\n";
 
-pub fn main() void {
-    lambda.handle(handler, .{});
+pub fn main(init: std.process.Init) void {
+    lambda.handle(init, handler, .{});
 }
 
 fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
@@ -70,7 +70,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
             // Remove or comment-out this line if you want to see the page update immediately.
             .{ .key = "Cache-Control", .value = "max-age=300, immutable" },
         },
-        .body = .{ .textual = 
+        .body = .{ .textual =
         \\<h1>Lambda URLs ⚡️ Zig Runtime</h1>
         \\<p>Welcome to the demo web page!</p>
         \\
@@ -82,7 +82,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
         \\  <li>🕵️‍♂️ <a href="/oops">Dude, where is my web page?</a></li>
         \\  <li>🧨 <a href="/crash">500</a></li>
         \\</ul>
-    },
+        },
     };
     return response.encode(ctx.arena);
 }

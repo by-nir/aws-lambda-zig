@@ -10,11 +10,13 @@ const AsyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror!void;
 const SyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror![]const u8;
 const StreamingHandlerFn = fn (ctx: Context, event: []const u8, stream: Stream) anyerror!void;
 
-fn serve(options: Options, processorFn: srv.ProcessorFn) void {
+fn serve(proc_init: std.process.Init, options: Options, processorFn: srv.ProcessorFn) void {
     // Initialize the server.
     // If it fails we can return since the server already logged the error.
     var server: Server = undefined;
-    Server.init(&server, options) catch return;
+    Server.init(&server, proc_init, options) catch {
+        return;
+    };
 
     // Run the event loop until an error occurs or the process is terminated.
     defer server.deinit();
@@ -23,8 +25,12 @@ fn serve(options: Options, processorFn: srv.ProcessorFn) void {
 
 /// The entry point for a synchronous AWS Lambda function.
 /// Accepts a handler function that will process each event separetly.
-pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: Options) void {
-    serve(options, struct {
+pub fn handleSync(
+    proc_init: std.process.Init,
+    comptime handlerFn: SyncHandlerFn,
+    options: Options,
+) void {
+    serve(proc_init, options, struct {
         fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             if (handlerFn(ctx, event)) |output| {
                 server.respondSuccess(output) catch return .abort;
@@ -39,8 +45,12 @@ pub fn handleSync(comptime handlerFn: SyncHandlerFn, options: Options) void {
 
 /// The entry point for an asynchronous AWS Lambda function.
 /// Accepts a handler function that will process each event separetly.
-pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: Options) void {
-    serve(options, struct {
+pub fn handleAsync(
+    proc_init: std.process.Init,
+    comptime handlerFn: AsyncHandlerFn,
+    options: Options,
+) void {
+    serve(proc_init, options, struct {
         fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             if (handlerFn(ctx, event)) {
                 server.respondSuccess("") catch return .abort;
@@ -55,8 +65,12 @@ pub fn handleAsync(comptime handlerFn: AsyncHandlerFn, options: Options) void {
 
 /// The entry point for a response streaming AWS Lambda function.
 /// Accepts a streaming handler function that will process each event separetly.
-pub fn handleStreaming(comptime handlerFn: StreamingHandlerFn, options: Options) void {
-    serve(options, struct {
+pub fn handleStreaming(
+    proc_init: std.process.Init,
+    comptime handlerFn: StreamingHandlerFn,
+    options: Options,
+) void {
+    serve(proc_init, options, struct {
         fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
             var stream: Server.Stream = undefined;
             var state: Stream.State = .pending;
@@ -70,7 +84,10 @@ pub fn handleStreaming(comptime handlerFn: StreamingHandlerFn, options: Options)
                     server.respondFailure(err, @errorReturnTrace()) catch {};
                     return .abort;
                 } else {
-                    log.err("The handler returned an error after opening a stream: {s}", .{@errorName(err)});
+                    log.err(
+                        "The handler returned an error after opening a stream: {s}",
+                        .{@errorName(err)},
+                    );
                 }
             };
 
@@ -102,10 +119,13 @@ pub const Stream = struct {
         return self.openPrint(content_type, "", {});
     }
 
-    /// Start streaming a response of a specified HTTP content type and initial body payload.
+    /// Start streaming a response of a specified HTTP content type and initial
+    /// body payload.
     ///
-    /// Warning: Note that `prelude_fmt` expects raw HTTP as it merely appends the bytes to the HTTP request.
-    /// The user MUST format the payload with proper HTTP semantics (or use a Event Encoder).
+    /// Warning: Note that `prelude_fmt` expects raw HTTP as it merely appends
+    /// the bytes to the HTTP request.
+    /// The user MUST format the payload with proper HTTP semantics (or use a
+    /// Event Encoder).
     pub fn openPrint(
         self: @This(),
         content_type: []const u8,
@@ -123,7 +143,8 @@ pub const Stream = struct {
 
     /// Send a partial response buffer to the client.
     ///
-    /// If an error occurs, the stream is closed and the handler should return as soon as possible.
+    /// If an error occurs, the stream is closed and the handler should return
+    /// as soon as possible.
     pub fn publish(self: Stream) !void {
         if (self.state.* != .active) return error.InactiveStream;
         try self.stream.flush();

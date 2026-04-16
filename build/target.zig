@@ -15,7 +15,8 @@ pub const Arch = enum {
 /// resolve an appropriate target query.
 /// Defaults to _x86_.
 pub fn archOption(b: *std.Build) Arch {
-    return b.option(Arch, "arch", "Lambda CPU architecture") orelse Arch.default;
+    return b.option(Arch, "arch", "Lambda CPU architecture") orelse
+        Arch.default;
 }
 
 /// Resolves a target query for the given Lambda architecture.
