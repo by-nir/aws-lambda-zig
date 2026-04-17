@@ -1,6 +1,7 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const api = @import("api.zig");
+const rt_meta = @import("api-metadata.zig");
+const HttpClient = @import("../utils/Http.zig");
 
 const DEFAULT_MEMORY_MB: u16 = 128;
 const DEFAULT_REGION: []const u8 = "us-east-1";
@@ -23,12 +24,18 @@ pub const Context = struct {
     config: ConfigMeta = .{},
     /// Request metadata of the invocation.
     request: RequestMeta = .{},
+    __client__: *HttpClient,
     __force_destroy__: *bool,
     __kv__: *const std.process.Environ.Map = undefined,
 
     /// Return the environmant value associated with a key.
-    pub fn env(self: Context, key: []const u8) ?[]const u8 {
+    pub fn env(self: @This(), key: []const u8) ?[]const u8 {
         return self.__kv__.get(key);
+    }
+
+    pub const RuntimeMetadata = rt_meta.RuntimeMetadata;
+    pub fn runtimeMetadata(self: @This()) !RuntimeMetadata {
+        return rt_meta.getRuntimeMetadata(self.arena, self.__client__, self.__kv__);
     }
 
     /// This will crash the runtime AFTER returning the response to the client.
@@ -36,7 +43,7 @@ pub const Context = struct {
     ///
     /// Warning: Use with caution! Only use this method when you assume the function
     /// won’t behave as expected in the following invocation.
-    pub fn forceTerminateAfterResponse(self: Context) void {
+    pub fn forceTerminateAfterResponse(self: @This()) void {
         self.__force_destroy__.* = true;
     }
 
@@ -59,13 +66,16 @@ pub const Context = struct {
         /// AWS Region where the Lambda function is executed.
         aws_region: []const u8 = DEFAULT_REGION,
 
-        /// Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
+        /// Access key obtained from the function's
+        /// [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
         aws_access_id: []const u8 = "",
 
-        /// Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
+        /// Access key obtained from the function's
+        /// [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
         aws_access_secret: []const u8 = "",
 
-        /// Access key obtained from the function's [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
+        /// Access key obtained from the function's
+        /// [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
         aws_session_token: []const u8 = "",
 
         /// Name of the Amazon CloudWatch Logs group for the function.
@@ -89,16 +99,20 @@ pub const Context = struct {
         xray_trace: []const u8 = "",
 
         /// The function ARN requested.
-        /// This may be different for **each invoke** that executes the same version.
+        /// This may be different for **each invoke** that executes the same
+        /// version.
         invoked_arn: []const u8 = "",
 
-        /// Function execution deadline counted in milliseconds since the _Unix epoch_.
+        /// Function execution deadline counted in milliseconds since the _Unix
+        /// epoch_.
         deadline_ms: u64 = 0,
 
-        /// Information about the client application and device when invoked through the AWS Mobile SDK.
+        /// Information about the client application and device when invoked
+        /// through the AWS Mobile SDK.
         client_context: []const u8 = "",
 
-        /// Information about the Amazon Cognito identity provider when invoked through the AWS Mobile SDK.
+        /// Information about the Amazon Cognito identity provider when invoked
+        /// through the AWS Mobile SDK.
         cognito_identity: []const u8 = "",
     };
 };

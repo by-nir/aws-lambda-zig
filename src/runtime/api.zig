@@ -41,7 +41,8 @@ pub const ErrorResponse = struct {
         const parsed = std.json.parseFromSliceLeaky(E, arena, json, .{
             .allocate = .alloc_if_needed,
         }) catch return error.ParseError;
-        return ErrorResponse{
+
+        return .{
             .message = parsed.errorMessage,
             .type = parsed.errorType,
         };
@@ -52,14 +53,14 @@ pub const ErrorResponse = struct {
 /// the error. Error will be served in response to the first invoke.
 pub fn sendInitFail(arena: Allocator, client: *Client, err: ErrorRequest) Error!InitFailResult {
     const result = try sendError(arena, client, URL_INIT_FAIL, "Runtime", err);
-    return InitFailResult.init(arena, result);
+    return .init(arena, result);
 }
 
 /// This is an iterator-style blocking API call. Runtime makes this request when
 /// it is ready to process a new invoke.
 pub fn sendInvocationNext(arena: Allocator, client: *Client) Error!InvocationNextResult {
     var result = try sendRequest(arena, client, URL_INVOC_NEXT, null);
-    return InvocationNextResult.init(arena, &result);
+    return .init(arena, &result);
 }
 
 /// Runtime makes this request in order to submit a response.
@@ -71,7 +72,7 @@ pub fn sendInvocationSuccess(
 ) Error!InvocationSuccessResult {
     const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Success");
     var result = try sendRequest(arena, client, path, payload);
-    return InvocationSuccessResult.init(arena, &result);
+    return .init(arena, &result);
 }
 
 /// Runtime makes this request in order to stream a response.
@@ -138,7 +139,8 @@ pub fn streamInvocationClose(
         log.err("[Stream Request] Client failed closing: {s}", .{@errorName(e)});
         return error.ClientError;
     };
-    return InvocationSuccessResult.init(arena, &result);
+
+    return .init(arena, &result);
 }
 
 /// Runtime makes this request in order to submit an error response. It can be
@@ -152,7 +154,7 @@ pub fn sendInvocationFail(
 ) Error!InvocationFailResult {
     const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Fail");
     const result = try sendError(arena, client, path, "Handler", err);
-    return InvocationFailResult.init(arena, result);
+    return .init(arena, result);
 }
 
 fn requestPath(
@@ -247,7 +249,8 @@ const StatusResponse = struct {
         const parsed = std.json.parseFromSliceLeaky(S, arena, json, .{
             .allocate = .alloc_if_needed,
         }) catch return error.ParseError;
-        return StatusResponse{ .status = parsed.status };
+
+        return .{ .status = parsed.status };
     }
 };
 

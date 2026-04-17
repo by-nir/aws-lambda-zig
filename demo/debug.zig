@@ -8,40 +8,48 @@ pub fn main(init: std.process.Init) void {
     lambda.handle(init, handler, .{});
 }
 
-fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
-    var str: std.Io.Writer.Allocating = try .initCapacity(ctx.arena, 1024);
+fn handler(ctx: lambda.Context, payload: []const u8) ![]const u8 {
+    var output: std.Io.Writer.Allocating = try .initCapacity(ctx.arena, 1024);
+    const w = &output.writer;
 
+    try w.writeByte('{');
+
+    // Payload
+    try w.print("\"payload\":{s}", .{payload});
+
+    // Function Metadata
     const cfg = ctx.config;
-    try str.writer.print(
-        "{{\"function_meta\":{{\"aws_region\":\"{s}\",\"aws_access_id\":\"{s}\",\"aws_access_secret\":\"{s}\",\"aws_session_token\":\"{s}\",\"function_name\":\"{s}\",\"function_version\":\"{s}\",\"function_size\":{d},\"function_init_type\":\"{s}\",\"function_handler\":\"{s}\",\"log_group\":\"{s}\",\"log_stream\":\"{s}\"}},",
-        .{
-            cfg.aws_region,
-            cfg.aws_access_id,
-            cfg.aws_access_secret,
-            cfg.aws_session_token,
-            cfg.func_name,
-            cfg.func_version,
-            cfg.func_size,
-            @tagName(cfg.func_init),
-            cfg.func_handler,
-            cfg.log_group,
-            cfg.log_stream,
-        },
-    );
+    try w.writeAll(",\"function_meta\":{");
+    try w.print("\"aws_region\":\"{s}\",", .{cfg.aws_region});
+    try w.print("\"aws_access_id\":\"{s}\",", .{cfg.aws_access_id});
+    try w.print("\"aws_access_secret\":\"{s}\",", .{cfg.aws_access_secret});
+    try w.print("\"aws_session_token\":\"{s}\",", .{cfg.aws_session_token});
+    try w.print("\"function_name\":\"{s}\",", .{cfg.func_name});
+    try w.print("\"function_version\":\"{s}\",", .{cfg.func_version});
+    try w.print("\"function_size\":{d},", .{cfg.func_size});
+    try w.print("\"function_init_type\":\"{s}\",", .{@tagName(cfg.func_init)});
+    try w.print("\"function_handler\":\"{s}\",", .{cfg.func_handler});
+    try w.print("\"log_group\":\"{s}\",", .{cfg.log_group});
+    try w.print("\"log_stream\":\"{s}\"", .{cfg.log_stream});
+    try w.writeByte('}');
 
+    // Runtime Metadata
+    const meta = try ctx.runtimeMetadata();
+    try w.writeAll(",\"runtime_meta\":{");
+    try w.print("\"availability_zone_id\":\"{s}\"", .{meta.availability_zone_id});
+    try w.writeByte('}');
+
+    // Invocation Metadata
     const req = ctx.request;
-    try str.writer.print(
-        "\"invocation_meta\":{{\"request_id\":\"{s}\",\"xray_trace\":\"{s}\",\"invoked_arn\":\"{s}\",\"deadline_ms\":{d},\"client_context\":\"{s}\",\"cognito_identity\":\"{s}\"}},\"payload\":{s}}}",
-        .{
-            req.id,
-            req.xray_trace,
-            req.invoked_arn,
-            req.deadline_ms,
-            req.client_context,
-            req.cognito_identity,
-            event,
-        },
-    );
+    try w.writeAll(",\"invocation_meta\":{");
+    try w.print("\"request_id\":\"{s}\",", .{req.id});
+    try w.print("\"xray_trace\":\"{s}\",", .{req.xray_trace});
+    try w.print("\"invoked_arn\":\"{s}\",", .{req.invoked_arn});
+    try w.print("\"deadline_ms\":{d},", .{req.deadline_ms});
+    try w.print("\"client_context\":\"{s}\",", .{req.client_context});
+    try w.print("\"cognito_identity\":\"{s}\"", .{req.cognito_identity});
+    try w.writeByte('}');
 
-    return str.toOwnedSlice();
+    try w.writeByte('}');
+    return output.toOwnedSlice();
 }

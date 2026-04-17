@@ -17,9 +17,12 @@ test {
     _ = KeyVal;
     _ = @import("utils/json.zig");
     _ = @import("utils/Http.zig");
+
     _ = @import("runtime/api.zig");
-    _ = @import("runtime/serve.zig");
+    _ = @import("runtime/api-metadata.zig");
     _ = @import("runtime/context.zig");
+    _ = @import("runtime/serve.zig");
     _ = hdl;
+
     _ = url;
 }

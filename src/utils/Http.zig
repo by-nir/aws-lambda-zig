@@ -63,6 +63,16 @@ pub fn send(
     options: Options,
 ) !Result {
     const uri = self.uriFor(path);
+    return self.sendUri(arena, uri, payload, options);
+}
+
+pub fn sendUri(
+    self: *@This(),
+    arena: Allocator,
+    uri: std.Uri,
+    payload: ?[]const u8,
+    options: Options,
+) !Result {
     const method: std.http.Method = if (payload == null) .GET else .POST;
     var req = try self.client.request(method, uri, .{
         .keep_alive = false,

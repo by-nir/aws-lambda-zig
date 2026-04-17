@@ -113,10 +113,11 @@ pub const Server = struct {
     /// Event loop – request and invocate events sequentially.
     pub fn listen(self: *@This(), processorFn: ProcessorFn) void {
         var force_terminate = false;
-        var context = ctx.Context{
+        var context: ctx.Context = .{
             .gpa = self.gpa,
             .arena = self.arena.allocator(),
             .io = &self.io,
+            .__client__ = &self.http,
             .__force_destroy__ = &force_terminate,
         };
         ctx.loadMeta(&context, self.env);

@@ -19,6 +19,7 @@ Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
 
 ## Features
 - [x] Runtime API
+- [x] Runtime Metadata API
 - [ ] Extensions API
 - [ ] Telemetry API
 - [x] Response streaming
@@ -276,6 +277,19 @@ Static config metadata is provided by the _handler context_ `ctx.config` field. 
 | `func_handler` | `[]const u8` | Handler location configured on the function. |
 | `log_group` | `[]const u8` | Name of the Amazon CloudWatch Logs group for the function. |
 | `log_stream` | `[]const u8` | Name of the Amazon CloudWatch Logs stream for the function. |
+
+#### Runtime Metadata
+To discover the metadata of the runtime environment where the Lambda function is executed, specifically the Availability Zone ID, the _handler context_ provides a discovery method.
+
+```zig
+const meta = try ctx.runtimeMetadata();
+```
+
+The returned struct contains the following fields:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `availability_zone_id` | `[]const u8` | Availability Zone ID where the Lambda function is executed. |
 
 #### Force Termination
 Request the Lambda execution crash the runtime **AFTER** returning the response to the client.
