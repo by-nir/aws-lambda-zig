@@ -4,17 +4,15 @@ const Allocator = mem.Allocator;
 const testing = std.testing;
 const test_alloc = testing.allocator;
 
-const KeyVal = @This();
-
 key: []const u8,
 value: []const u8,
 
-pub fn join(self: KeyVal, gpa: Allocator, delimeter: []const u8) ![]const u8 {
+pub fn join(self: @This(), gpa: Allocator, delimeter: []const u8) ![]const u8 {
     return std.fmt.allocPrint(gpa, "{s}{s}{s}", .{ self.key, delimeter, self.value });
 }
 
 test join {
-    const kv = KeyVal{
+    const kv: @This() = .{
         .key = "foo",
         .value = "bar",
     };
@@ -25,21 +23,23 @@ test join {
     try testing.expectEqualStrings("foo=bar", concat);
 }
 
-pub fn deinit(self: KeyVal, gpa: Allocator) void {
+pub fn deinit(self: @This(), gpa: Allocator) void {
     gpa.free(self.key);
     gpa.free(self.value);
 }
 
 test deinit {
-    const kv = KeyVal{
+    const kv: @This() = .{
         .key = try test_alloc.dupe(u8, "foo"),
         .value = try test_alloc.dupe(u8, "bar"),
     };
     kv.deinit(test_alloc);
 }
 
-pub fn split(string: []const u8, delimeter: []const u8) ?KeyVal {
-    const index = mem.indexOf(u8, string, delimeter) orelse return null;
+pub fn split(string: []const u8, delimeter: []const u8) ?@This() {
+    const index = mem.indexOf(u8, string, delimeter) orelse
+        return null;
+
     const skip = index + delimeter.len;
     return .{
         .key = string[0..index],
@@ -50,18 +50,18 @@ pub fn split(string: []const u8, delimeter: []const u8) ?KeyVal {
 test split {
     try testing.expectEqual(null, split("foo", "="));
 
-    try testing.expectEqualDeep(KeyVal{
+    try testing.expectEqualDeep(@This(){
         .key = "foo",
         .value = "bar",
     }, split("foo=bar", "="));
 
-    try testing.expectEqualDeep(KeyVal{
+    try testing.expectEqualDeep(@This(){
         .key = "foo",
         .value = "bar",
     }, split("foo::bar", "::"));
 }
 
-pub fn deinitSplitted(self: KeyVal, gpa: Allocator) void {
+pub fn deinitSplitted(self: @This(), gpa: Allocator) void {
     const start = self.key.ptr;
     const len = (self.value.ptr + self.value.len) - start;
     const slice = start[0..][0..len];
@@ -70,7 +70,7 @@ pub fn deinitSplitted(self: KeyVal, gpa: Allocator) void {
 
 test deinitSplitted {
     const concat = try test_alloc.dupe(u8, "foo::bar");
-    const kv = KeyVal{
+    const kv: @This() = .{
         .key = concat[0..3],
         .value = concat[5..8],
     };

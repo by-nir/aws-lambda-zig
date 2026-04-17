@@ -1,8 +1,8 @@
 //! A simple HTTP client shared between the APIs.
 const std = @import("std");
+const Io = std.Io;
 const testing = std.testing;
 const Client = std.http.Client;
-const Io = std.Io;
 const Threaded = std.Io.Threaded;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
@@ -13,16 +13,15 @@ pub const Request = Client.Request;
 pub const BodyWriter = std.http.BodyWriter;
 pub const HeaderIterator = std.http.HeaderIterator;
 
-const Self = @This();
 const USER_AGENT = std.fmt.comptimePrint(
     "aws-lambda-zig/{s} (Zig/{s})",
     .{ package_version, builtin.zig_version_string },
 );
 
-client: Client,
 uri: std.Uri,
+client: Client,
 
-pub fn init(self: *Self, gpa: Allocator, origin: []const u8, io: Io) !void {
+pub fn init(self: *@This(), gpa: Allocator, origin: []const u8, io: Io) !void {
     const idx = std.mem.indexOfScalar(u8, origin, ':');
     self.uri = std.Uri{
         .path = .{ .percent_encoded = "" },
@@ -34,10 +33,13 @@ pub fn init(self: *Self, gpa: Allocator, origin: []const u8, io: Io) !void {
             null,
     };
 
-    self.client = Client{ .allocator = gpa, .io = io };
+    self.client = .{
+        .allocator = gpa,
+        .io = io,
+    };
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *@This()) void {
     self.client.deinit();
     self.* = undefined;
 }
@@ -53,7 +55,13 @@ pub const Result = struct {
     body: []const u8,
 };
 
-pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u8, options: Options) !Result {
+pub fn send(
+    self: *@This(),
+    arena: Allocator,
+    path: []const u8,
+    payload: ?[]const u8,
+    options: Options,
+) !Result {
     const uri = self.uriFor(path);
     const method: std.http.Method = if (payload == null) .GET else .POST;
     var req = try self.client.request(method, uri, .{
@@ -79,7 +87,7 @@ pub fn send(self: *Self, arena: Allocator, path: []const u8, payload: ?[]const u
 }
 
 pub fn openStream(
-    self: *Self,
+    self: *@This(),
     path: []const u8,
     options: Options,
     comptime prelude_raw: []const u8,
@@ -107,7 +115,12 @@ pub fn openStream(
     }
 }
 
-pub fn closeStream(arena: Allocator, req: *Request, body: *BodyWriter, trailers: []const Header) !Result {
+pub fn closeStream(
+    arena: Allocator,
+    req: *Request,
+    body: *BodyWriter,
+    trailers: []const Header,
+) !Result {
     defer req.deinit();
 
     try body.endChunked(.{
@@ -118,7 +131,7 @@ pub fn closeStream(arena: Allocator, req: *Request, body: *BodyWriter, trailers:
     return parseResponse(arena, &res);
 }
 
-fn uriFor(self: *Self, path: []const u8) std.Uri {
+fn uriFor(self: *@This(), path: []const u8) std.Uri {
     var uri = self.uri;
     uri.path = .{ .raw = path };
     return uri;

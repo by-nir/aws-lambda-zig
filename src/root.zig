@@ -6,11 +6,12 @@ pub const handle = hdl.handleSync;
 pub const handleAsync = hdl.handleAsync;
 pub const handleStream = hdl.handleStreaming;
 
-pub const KeyVal = @import("utils/KeyVal.zig");
-pub const log = @import("utils/log.zig").handler;
-
 // Events
 pub const url = @import("event/url.zig");
+
+// Utils
+pub const KeyVal = @import("utils/KeyVal.zig");
+pub const log = @import("utils/log.zig").handler;
 
 test {
     _ = KeyVal;

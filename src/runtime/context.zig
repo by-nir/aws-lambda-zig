@@ -7,25 +7,28 @@ const DEFAULT_REGION: []const u8 = "us-east-1";
 const DEFAULT_INIT_TYPE = Context.ConfigMeta.InitType.on_demand;
 
 pub const Context = struct {
-    /// The user owns the memory and **must deallocate it** by the end of the invocation.
+    /// The user owns the memory and **must deallocate it** by the end of the
+    /// invocation.
     ///
     /// While it may be used to persist data and services between invocations,
     /// consider using _dependency injection_ or _Lambda Extension_ instead.
     gpa: std.mem.Allocator,
     /// An allocator tied to the invocation’s lifetime.
-    /// The runtime will deallocate the memory on the user’s behalf after the invocation resolves.
+    /// The runtime will deallocate the memory on the user’s behalf after the
+    /// invocation resolves.
     arena: std.mem.Allocator,
+    /// I/O interface for performing network and file operations.
+    io: *const std.Io,
     /// Configuration metadata for the function.
     config: ConfigMeta = .{},
     /// Request metadata of the invocation.
     request: RequestMeta = .{},
-    io: *const std.Io,
-    _force_destroy: *bool,
-    _kv: *const std.process.Environ.Map = undefined,
+    __force_destroy__: *bool,
+    __kv__: *const std.process.Environ.Map = undefined,
 
     /// Return the environmant value associated with a key.
     pub fn env(self: Context, key: []const u8) ?[]const u8 {
-        return self._kv.get(key);
+        return self.__kv__.get(key);
     }
 
     /// This will crash the runtime AFTER returning the response to the client.
@@ -34,7 +37,7 @@ pub const Context = struct {
     /// Warning: Use with caution! Only use this method when you assume the function
     /// won’t behave as expected in the following invocation.
     pub fn forceTerminateAfterResponse(self: Context) void {
-        self._force_destroy.* = true;
+        self.__force_destroy__.* = true;
     }
 
     pub const ConfigMeta = struct {
@@ -104,7 +107,7 @@ pub const Context = struct {
 /// https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html
 pub fn loadMeta(ctx: *Context, env: *const std.process.Environ.Map) void {
     const cfg = &ctx.config;
-    ctx._kv = env;
+    ctx.__kv__ = env;
 
     if (env.get("AWS_REGION")) |v|
         cfg.aws_region = v

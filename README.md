@@ -24,9 +24,7 @@ Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
 - [x] Response streaming
 - [x] CloudWatch & X-Ray integration
 - [ ] Lifecycle hooks
-- [ ] Dependency injection
 - [x] Build system target configuration
-- [ ] Managed build step
 - [ ] Testing utilities
 
 ### Services Events
@@ -234,16 +232,14 @@ The handler signature includes the parameter `ctx: lambda.Context`, it provides 
 
 The following sections describe the context...
 
-#### Memory Allocation
+#### Managed Resources
 Since the runtime manages the function and invocation lifecycle, it also owns the memory. The _handler context_ provides two allocators:
 
 | Allocator | Behavior |
 | --------- | -------- |
 | `ctx.gpa` | You own the memory and **must deallocate it** by the end of the invocation. |
 | `ctx.arena` | The memory is tied to the invocation’s lifetime. The runtime will deallocate it on your behalf after the invocation resolves. |
-
-> [!NOTE]
-> While `ctx.gpa` may be used to persist data and services between invocations, for such cases consider using [dependency injection](#dependency-injection) or [extensions](#extensions).
+| `ctx.io` | I/O interface for performing network and file operations. |
 
 #### Environment Variables
 The functions’ environment variables are mapped by the _handler context_, they can be accesed using the `env(key)` method:
@@ -349,15 +345,6 @@ _Closing the stream is not required._
 | `stream.openPrint(content_type, fmt, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
 | `stream.publish()` | Send the partial response buffer to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
-
-### Lifecycle Hooks
-Not yet implemented.
-
-### Dependency Injection
-Not yet implemented.
-
-## Extensions
-Not yet implemented.
 
 ## Demos
 

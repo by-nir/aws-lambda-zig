@@ -116,8 +116,8 @@ pub const Server = struct {
         var context = ctx.Context{
             .gpa = self.gpa,
             .arena = self.arena.allocator(),
-            ._force_destroy = &force_terminate,
             .io = &self.io,
+            .__force_destroy__ = &force_terminate,
         };
         ctx.loadMeta(&context, self.env);
 
