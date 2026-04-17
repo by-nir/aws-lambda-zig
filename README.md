@@ -99,12 +99,13 @@ pub fn build(b: *std.Build) void {
 
 ### Event Handler
 ```zig
+const std = @import("std");
 const lambda = @import("aws-lambda");
 
 // Entry point for the Lambda function.
-pub fn main() void {
+pub fn main(init: std.process.Init) void {
     // Bind the handler to the runtime:
-    lambda.handle(handler, .{});
+    lambda.handle(init, handler, .{});
 }
 
 // Eeach event is processed separetly the handler function.
@@ -182,16 +183,17 @@ The library provides a runtime that handles the event lifecycle and communicatio
 Since the library manages the lifecycle, it expects the handler to have a specific signature. _Note that [response streaming](#response-streaming) has a dedicated lifecycle and handler signature._
 
 ```zig
+const std = @import("std");
 const lambda = @import("aws-lambda");
 
 // Entry point for the Lambda function.
 // Eeach event is processed separetly the handler function.
-pub fn main() void {
+pub fn main(init: std.process.Init) void {
     // Bind the handler to the runtime:
-    lambda.handle(handlerSync, .{});
+    lambda.handle(init, handlerSync, .{});
 
     // Alternatively, for asynchronous handlers:
-    lambda.handleAsync(handlerAsync, .{});
+    lambda.handleAsync(init, handlerAsync, .{});
 }
 
 fn handlerSync(
@@ -294,12 +296,13 @@ ctx.forceTerminateAfterResponse();
 The runtime supports streaming responses to the client; though implementing a streaming handler differs from the standard handler.
 
 ```zig
+const std = @import("std");
 const lambda = @import("aws-lambda");
 
 // Entry point for the Lambda function.
-pub fn main() void {
+pub fn main(init: std.process.Init) void {
     // Bind the handler to the runtime:
-    lambda.handleStream(handler, .{});
+    lambda.handleStream(init, handler, .{});
 }
 
 // Eeach event is processed separetly the handler function.

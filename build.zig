@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("build.zig.zon"),
     });
 
-    addAllDemos(b, zon_mod);
+    addDemos(b, zon_mod);
     addUnitTests(b, zon_mod);
 }
 
@@ -33,7 +33,7 @@ fn addUnitTests(b: *std.Build, zon_mod: *std.Build.Module) void {
     test_step.dependOn(&run_lib_unit_tests.step);
 }
 
-fn addAllDemos(b: *std.Build, zon_mod: *std.Build.Module) void {
+fn addDemos(b: *std.Build, zon_mod: *std.Build.Module) void {
     const target = resolveTargetQuery(b, archOption(b));
     const optimize = b.standardOptimizeOption(.{
         .preferred_optimize_mode = .ReleaseFast,
