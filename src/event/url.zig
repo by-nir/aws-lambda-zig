@@ -46,7 +46,7 @@ pub const Response = struct {
     pub const internal_server_error = "{\"statusCode\":500,body:\"Internal Server Error\"}";
 
     pub fn encode(self: Response, gpa: Allocator) ![]const u8 {
-        var buffer: std.io.Writer.Allocating = .init(gpa);
+        var buffer: std.Io.Writer.Allocating = .init(gpa);
         errdefer buffer.deinit();
 
         try buffer.writer.writeByte('{');
@@ -156,7 +156,7 @@ test Response {
 ///     .body = .{ .textual = "<h1>Incoming...</h1>" },
 /// });
 /// ```
-pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !*std.io.Writer {
+pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !*std.Io.Writer {
     // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-runtime/src/requests.rs
     // https://aws.amazon.com/blogs/compute/using-response-streaming-with-aws-lambda-web-adapter-to-optimize-performance
     const writer = try stream.openPrint(INTEGRATION_CONTENT_TYPE, "{f}", .{StreamingResponse{
@@ -183,12 +183,12 @@ const StreamingResponse = struct {
     arena: Allocator,
     response: Response,
 
-    pub fn format(self: @This(), writer: *std.io.Writer) !void {
+    pub fn format(self: @This(), writer: *std.Io.Writer) !void {
         var response = self.response;
         response.body = .{ .textual = "" };
 
         const prelude = response.encode(self.arena) catch {
-            return std.io.Writer.Error.WriteFailed;
+            return std.Io.Writer.Error.WriteFailed;
         };
         try writer.writeAll(prelude);
     }

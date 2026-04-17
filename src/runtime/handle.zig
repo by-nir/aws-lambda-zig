@@ -98,7 +98,7 @@ pub const Stream = struct {
     };
 
     /// Start streaming a response of a specified content type.
-    pub fn open(self: @This(), content_type: []const u8) !*std.io.Writer {
+    pub fn open(self: @This(), content_type: []const u8) !*std.Io.Writer {
         return self.openPrint(content_type, "", {});
     }
 
@@ -111,7 +111,7 @@ pub const Stream = struct {
         content_type: []const u8,
         comptime prelude_fmt: []const u8,
         prelude_args: anytype,
-    ) !*std.io.Writer {
+    ) !*std.Io.Writer {
         if (self.state.* != .pending) return error.ReopeningStream;
 
         std.debug.assert(content_type.len > 0);

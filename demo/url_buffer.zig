@@ -90,7 +90,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
 /// The `url.Request` contains both the HTTP request and additional AWS metadata.
 fn ipAddrPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
     // Generate dynamic HTML content, note the usage of an arena allocator.
-    var html: std.io.Writer.Allocating = .init(ctx.arena);
+    var html: std.Io.Writer.Allocating = .init(ctx.arena);
 
     try html.writer.writeAll(global_nav);
     if (req.request_context.http.source_ip) |addr| {
@@ -110,7 +110,7 @@ fn ipAddrPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
 
 /// Use a parsed query parameter provided by the decoded request to greet the user.
 fn greetPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
-    var html: std.io.Writer.Allocating = .init(ctx.arena);
+    var html: std.Io.Writer.Allocating = .init(ctx.arena);
 
     try html.writer.writeAll(global_nav);
 
@@ -165,7 +165,7 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         }
 
         // Encode the cookie value
-        var new_cookie: std.io.Writer.Allocating = .init(ctx.arena);
+        var new_cookie: std.Io.Writer.Allocating = .init(ctx.arena);
         errdefer new_cookie.deinit();
         try new_cookie.writer.writeAll("store=");
         try std.base64.standard.Encoder.encodeWriter(&new_cookie.writer, value);
@@ -176,7 +176,7 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
     }
 
     // Render a form to display and update the stored value.
-    var html: std.io.Writer.Allocating = .init(ctx.arena);
+    var html: std.Io.Writer.Allocating = .init(ctx.arena);
     try html.writer.writeAll(global_nav);
     try html.writer.print(
         \\<form>

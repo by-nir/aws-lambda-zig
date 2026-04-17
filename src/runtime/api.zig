@@ -205,7 +205,7 @@ fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]
 }
 
 fn formatError(arena: Allocator, err_category: []const u8, err: ErrorRequest) ![]const u8 {
-    var buffer: std.io.Writer.Allocating = .init(arena);
+    var buffer: std.Io.Writer.Allocating = .init(arena);
 
     try buffer.writer.print(
         \\{{"errorType":"{s}.

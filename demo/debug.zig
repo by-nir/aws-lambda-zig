@@ -9,7 +9,7 @@ pub fn main() void {
 }
 
 fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
-    var str: std.io.Writer.Allocating = try .initCapacity(ctx.arena, 1024);
+    var str: std.Io.Writer.Allocating = try .initCapacity(ctx.arena, 1024);
 
     const cfg = ctx.config;
     try str.writer.print(

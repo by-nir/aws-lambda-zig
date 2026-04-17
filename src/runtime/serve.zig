@@ -18,16 +18,18 @@ pub const InvocationResult = enum {
 pub const Options = struct {};
 
 pub const Server = struct {
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
+    gpa: std.heap.DebugAllocator(.{}),
     arena: std.heap.ArenaAllocator,
+    threaded: std.Io.Threaded,
+    io: std.Io,
     http: HttpClient,
-    env: std.process.EnvMap,
+    env: std.process.Environ.Map,
     request_id: []const u8 = "",
 
     pub fn init(self: *Server, _: Options) !void {
         errdefer self.* = undefined;
 
-        self.gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        self.gpa = .init;
         const gpa_alloc = self.gpa.allocator();
         errdefer _ = self.gpa.deinit();
 
@@ -48,7 +50,20 @@ pub const Server = struct {
             return initFailed(arena_alloc, null, error.MissingRuntimeOrigin, "Missing the runtime’s API origin URL");
         };
 
-        self.http = HttpClient.init(gpa_alloc, api_origin) catch |err| {
+        const process_environ: std.process.Environ = if (@import("builtin").link_libc)
+            .{ .block = std.c.environ }
+        else
+            .empty;
+
+        // Initialize threaded IO - owned by Server
+        self.threaded = std.Io.Threaded.init(gpa_alloc, .{
+            .environ = process_environ,
+        });
+        errdefer self.threaded.deinit();
+
+        self.io = self.threaded.io();
+
+        HttpClient.init(&self.http, gpa_alloc, api_origin, self.io) catch |err| {
             return initFailed(arena_alloc, null, err, "Creating a HTTP client failed");
         };
     }
@@ -57,6 +72,7 @@ pub const Server = struct {
         self.http.deinit();
         self.env.deinit();
         self.arena.deinit();
+        self.threaded.deinit();
 
         switch (self.gpa.deinit()) {
             .ok => {},
@@ -98,6 +114,7 @@ pub const Server = struct {
             .gpa = self.gpa.allocator(),
             .arena = self.arena.allocator(),
             ._force_destroy = &force_terminate,
+            .io = &self.io,
         };
         ctx.loadMeta(&context, &self.env);
 
@@ -134,8 +151,8 @@ pub const Server = struct {
     }
 
     pub fn respondFailure(self: *Server, err: anyerror, trace: ?*std.builtin.StackTrace) !void {
-        if (trace) |t| {
-            log.err("The handler returned an error `{s}`.{f}", .{ @errorName(err), t });
+        if (trace) |_| {
+            log.err("The handler returned an error `{s}`.", .{@errorName(err)});
         } else {
             log.err("The handler returned an error `{s}`.", .{@errorName(err)});
         }
@@ -203,7 +220,7 @@ pub const Server = struct {
         body: std.http.BodyWriter,
         arena: std.mem.Allocator,
 
-        pub fn writer(self: *Stream) *std.io.Writer {
+        pub fn writer(self: *Stream) *std.Io.Writer {
             return &self.body.writer;
         }
 

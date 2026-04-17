@@ -9,7 +9,7 @@ pub fn main() void {
 }
 
 /// 0.5 seconds (in nanoseconds)
-const HALF_SEC = 0.5 * std.time.ns_per_s;
+const HALF_SEC = std.time.ns_per_s / 2;
 
 fn handler(_: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
     // Start a textual event stream with a prelude body.
@@ -17,7 +17,7 @@ fn handler(_: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
     const writer = try stream.openPrint("text/event-stream", "Loading {d} messages...\n\n", .{3});
 
     // Wait for half a second.
-    std.Thread.sleep(HALF_SEC);
+    try sleepHalfSecond();
 
     // Append multiple to the stream’s buffer without publishing to the client.
     try writer.writeAll("id: 0\n");
@@ -25,11 +25,11 @@ fn handler(_: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
 
     // Send the buffered response to the client.
     try stream.publish();
-    std.Thread.sleep(HALF_SEC);
+    try sleepHalfSecond();
 
     try writer.writeAll("id: 1\ndata: This is message number 2\n\n");
     try stream.publish();
-    std.Thread.sleep(HALF_SEC);
+    try sleepHalfSecond();
 
     // One last message to the client...
     try writer.print("id: {d}\ndata: This is message number {d}\n\n", .{ 2, 3 });
@@ -45,4 +45,11 @@ fn handler(_: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
 
 fn doSomeCleanup() void {
     // Some cleanup work...
+}
+
+fn sleepHalfSecond() !void {
+    try std.Io.Clock.Duration.sleep(.{
+        .clock = .awake,
+        .raw = .fromNanoseconds(HALF_SEC),
+    }, std.Options.debug_io);
 }

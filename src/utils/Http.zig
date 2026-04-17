@@ -2,6 +2,8 @@
 const std = @import("std");
 const testing = std.testing;
 const Client = std.http.Client;
+const Io = std.Io;
+const Threaded = std.Io.Threaded;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const package_version = @import("meta.zig").package_version;
@@ -20,9 +22,9 @@ const USER_AGENT = std.fmt.comptimePrint(
 client: Client,
 uri: std.Uri,
 
-pub fn init(gpa: Allocator, origin: []const u8) !Self {
+pub fn init(self: *Self, gpa: Allocator, origin: []const u8, io: Io) !void {
     const idx = std.mem.indexOfScalar(u8, origin, ':');
-    const uri = std.Uri{
+    self.uri = std.Uri{
         .path = .{ .percent_encoded = "" },
         .scheme = "http",
         .host = .{ .raw = if (idx) |i| origin[0..i] else origin },
@@ -32,10 +34,7 @@ pub fn init(gpa: Allocator, origin: []const u8) !Self {
             null,
     };
 
-    return .{
-        .client = Client{ .allocator = gpa },
-        .uri = uri,
-    };
+    self.client = Client{ .allocator = gpa, .io = io };
 }
 
 pub fn deinit(self: *Self) void {
@@ -137,7 +136,7 @@ fn parseResponse(arena: Allocator, res: *Client.Response) !Result {
     var transfer_buffer: [64]u8 = undefined;
     const reader = res.reader(&transfer_buffer);
 
-    var buffer: std.io.Writer.Allocating = .init(arena);
+    var buffer: std.Io.Writer.Allocating = .init(arena);
     _ = reader.streamRemaining(&buffer.writer) catch |err| switch (err) {
         error.ReadFailed => return res.bodyErr().?,
         else => |e| return e,
