@@ -157,10 +157,14 @@ pub const Server = struct {
     }
 
     pub fn respondFailure(self: *@This(), err: anyerror, trace: ?*std.builtin.StackTrace) !void {
-        if (trace) |_| {
-            log.err("The handler returned an error `{s}`.", .{@errorName(err)});
-        } else {
-            log.err("The handler returned an error `{s}`.", .{@errorName(err)});
+        log.err("The handler returned an error `{s}`.", .{@errorName(err)});
+
+        if (trace) |st| {
+            var buffer: [64]u8 = undefined;
+            const stderr = std.debug.lockStderr(&buffer).terminal();
+            defer std.debug.unlockStderr();
+
+            try std.debug.writeErrorReturnTrace(st, stderr);
         }
 
         const request = api.ErrorRequest{
