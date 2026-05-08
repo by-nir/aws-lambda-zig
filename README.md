@@ -63,7 +63,7 @@ _Feel free to open an issue for additional integrations, or better contribute a 
 ### Build Script
 ```zig
 const std = @import("std");
-const lambda = @import("aws-lambda");
+const lambda = @import("aws_lambda");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{
@@ -74,7 +74,7 @@ pub fn build(b: *std.Build) void {
     const target = lambda.resolveTargetQuery(b, lambda.archOption(b));
 
     // Import the runtime module
-    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
+    const runtime = b.dependency("aws_lambda", .{}).module("lambda");
 
     // Create the handler’s module
     const mod = b.createModule(.{
@@ -107,7 +107,7 @@ pub fn main(init: std.process.Init) void {
     lambda.handle(init, handler, .{});
 }
 
-// Eeach event is processed separetly the handler function.
+// Each event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
     ctx: lambda.Context,    // Metadata and utilities
@@ -137,7 +137,7 @@ It can then by set through `-Darch=x86` or `-Darch=arm` (defaults to _x86_ when 
 #### Example Build Script
 ```zig
 const std = @import("std");
-const lambda = @import("aws-lambda");
+const lambda = @import("aws_lambda");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{
@@ -151,7 +151,7 @@ pub fn build(b: *std.Build) void {
     const target = lambda.resolveTargetQuery(b, arch);
 
     // Import the runtime module
-    const runtime = b.dependency("aws-lambda", .{}).module("lambda");
+    const runtime = b.dependency("aws_lambda", .{}).module("lambda");
 
     // Create the handler’s module
     const mod = b.createModule(.{
@@ -186,7 +186,7 @@ const std = @import("std");
 const lambda = @import("aws-lambda");
 
 // Entry point for the Lambda function.
-// Eeach event is processed separetly the handler function.
+// Each event is processed separetly the handler function.
 pub fn main(init: std.process.Init) void {
     // Bind the handler to the runtime:
     lambda.handle(init, handlerSync, .{});
@@ -315,7 +315,7 @@ pub fn main(init: std.process.Init) void {
     lambda.handleStream(init, handler, .{});
 }
 
-// Eeach event is processed separetly the handler function.
+// Each event is processed separetly the handler function.
 // The function must have the following signature:
 fn handler(
     ctx: lambda.Context,    // Metadata and utilities
