@@ -8,6 +8,8 @@ const DEFAULT_REGION: []const u8 = "us-east-1";
 const DEFAULT_INIT_TYPE = Context.ConfigMeta.InitType.on_demand;
 
 pub const Context = struct {
+    /// I/O interface for performing network and file operations.
+    io: std.Io,
     /// The user owns the memory and **must deallocate it** by the end of the
     /// invocation.
     ///
@@ -18,8 +20,6 @@ pub const Context = struct {
     /// The runtime will deallocate the memory on the user’s behalf after the
     /// invocation resolves.
     arena: std.mem.Allocator,
-    /// I/O interface for performing network and file operations.
-    io: *const std.Io,
     /// Configuration metadata for the function.
     config: ConfigMeta = .{},
     /// Request metadata of the invocation.
