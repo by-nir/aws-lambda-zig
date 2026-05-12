@@ -10,7 +10,7 @@ pub const ProcessorFn =
 pub const InvocationResult = enum {
     /// The runtime may process another event.
     success,
-    /// The runtime should terminate the lambda instance.
+    /// The runtime should terminate the Lambda instance.
     abort,
 };
 
@@ -54,7 +54,7 @@ pub const Server = struct {
             );
         };
 
-        // Initialize threaded IO - owned by Server
+        // Initialize threaded I/O. Owned by `Server`.
         self.threaded = std.Io.Threaded.init(self.gpa, .{
             .environ = proc_init.minimal.environ,
         });
@@ -110,7 +110,7 @@ pub const Server = struct {
         return err;
     }
 
-    /// Event loop – request and invocate events sequentially.
+    /// Event loop: request and invoke events sequentially.
     pub fn listen(self: *@This(), processorFn: ProcessorFn) void {
         var force_terminate = false;
         var context: ctx.Context = .{
@@ -144,7 +144,7 @@ pub const Server = struct {
                     // Process the event
                     const status = processorFn(self, context, event.payload);
                     if (status == .abort) {
-                        // The handler failed processing the event
+                        // The handler failed while processing the event.
                         return;
                     } else if (force_terminate) {
                         @panic("The handler requested to terminate the instance");

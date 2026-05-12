@@ -24,7 +24,7 @@ fn serve(proc_init: std.process.Init, options: Options, processorFn: srv.Process
 }
 
 /// The entry point for a synchronous AWS Lambda function.
-/// Accepts a handler function that will process each event separetly.
+/// Accepts a handler function that processes each event separately.
 pub fn handleSync(
     proc_init: std.process.Init,
     comptime handlerFn: SyncHandlerFn,
@@ -44,7 +44,7 @@ pub fn handleSync(
 }
 
 /// The entry point for an asynchronous AWS Lambda function.
-/// Accepts a handler function that will process each event separetly.
+/// Accepts a handler function that processes each event separately.
 pub fn handleAsync(
     proc_init: std.process.Init,
     comptime handlerFn: AsyncHandlerFn,
@@ -64,7 +64,7 @@ pub fn handleAsync(
 }
 
 /// The entry point for a response streaming AWS Lambda function.
-/// Accepts a streaming handler function that will process each event separetly.
+/// Accepts a streaming handler function that processes each event separately.
 pub fn handleStreaming(
     proc_init: std.process.Init,
     comptime handlerFn: StreamingHandlerFn,
@@ -114,18 +114,18 @@ pub const Stream = struct {
         end,
     };
 
-    /// Start streaming a response of a specified content type.
+    /// Start streaming a response with the specified content type.
     pub fn open(self: @This(), content_type: []const u8) !*std.Io.Writer {
         return self.openPrint(content_type, "", {});
     }
 
-    /// Start streaming a response of a specified HTTP content type and initial
+    /// Start streaming a response with the specified HTTP content type and a
     /// body payload.
     ///
     /// Warning: Note that `prelude_fmt` expects raw HTTP as it merely appends
     /// the bytes to the HTTP request.
-    /// The user MUST format the payload with proper HTTP semantics (or use a
-    /// Event Encoder).
+    /// The user MUST format the payload with proper HTTP semantics (or use an
+    /// event encoder).
     pub fn openPrint(
         self: @This(),
         content_type: []const u8,

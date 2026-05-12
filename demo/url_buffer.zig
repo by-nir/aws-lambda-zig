@@ -1,6 +1,6 @@
 //! Use Lambda URLs to serve dynamic web pages.
 //!
-//! ⚠️ This is not a production-ready web server, don’t use it in production!
+//! ⚠️ This is not a production-ready web server. Do not use it in production.
 //!
 //! 👉 Be sure to configure the Lambda function with URL enabled and BUFFERED
 //! invoke mode.
@@ -20,7 +20,7 @@ fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
     // We pass an arena allocator, so we don’t need to deinit.
     const request = try lambda.url.parseRequest(ctx.arena, event);
 
-    // Use the router the serve dynamic content based on the event’s request.
+    // Use the router to serve dynamic content based on the event’s request.
     // If rendering the response fails, we instead return an error page.
     return router(ctx, request) catch |err| {
         // ctx.forceTerminateAfterResponse();
@@ -35,8 +35,8 @@ fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
 
         // Render a custom error page:
         return internalErrorPage(ctx, err)
-        // In case we can’t render the error page either (eg. out of memory),
-        // the last resort is to return a pre-encoded static response:
+        // If we cannot render the error page either (e.g. due to running out of
+        // memory), the last resort is to return a pre-encoded static response:
         catch lambda.url.Response.internal_server_error;
     };
 }
@@ -78,7 +78,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
         \\
         \\<ul>
         \\  <li>🏠 <a href="/ip">What’s my IP address?</a></li>
-        \\  <li>👋 <a href="/hello?name=stranger">Greatings, stranger</a></li>
+        \\  <li>👋 <a href="/hello?name=stranger">Greetings, stranger</a></li>
         \\  <li>🍪 <a href="/cookiejar">Storage</a></li>
         \\  <li>🔑 <a href="/53cr37" download="53cr37.txt">53cr37.txt</a></li>
         \\  <li>🕵️‍♂️ <a href="/oops">Dude, where is my web page?</a></li>
@@ -196,7 +196,7 @@ fn downloadPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         // We respond with plain text instead of HTML like in the other pages.
         .content_type = "text/plain; charset=utf-8",
 
-        // Since we are generating a downloadable file we use a `.binary` body
+        // Since we are generating a downloadable file, we use a `.binary` body
         // instead of `.textual`.
         .body = .{ .binary = req.request_context.time.? },
     });

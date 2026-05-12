@@ -6,7 +6,7 @@ pub fn main(init: std.process.Init) void {
     lambda.handle(init, handler, .{});
 }
 
-// Max lambda payload size is 6MB.
+// The maximum Lambda payload size is 6 MB.
 const output: [8 * 1024 * 1024]u8 = undefined;
 
 fn handler(_: lambda.Context, _: []const u8) ![]const u8 {

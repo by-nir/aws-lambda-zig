@@ -22,27 +22,33 @@ pub const Response = struct {
     content_type: ?[]const u8 = null,
     /// The HTTP status code for the response.
     status_code: std.http.Status = .ok,
-    /// A list of all cookies sent as part of the response.
-    /// Lambda automatically interprets this and adds them as `set-cookie` headers in your HTTP response.
+    /// A list of cookies sent as part of the response.
+    /// Lambda automatically interprets them and adds `set-cookie` headers to
+    /// the HTTP response.
+    ///
     /// Example:
     /// ```http
     /// cookie1=value1; Expires=21 Oct 2021 07:48 GMT
     /// ```
     cookies: []const []const u8 = &.{},
-    /// The response’s headers. Lambda URLs **don’t support** headers with multiple values.
+    /// The response’s headers. Lambda URLs **don’t support** headers with
+    /// multiple values.
     ///
     /// To set the content type of the response, use the `content_type` field.
-    /// To return cookies from your function, don't manually add `set-cookie` headers, instead set the `cookies` field.
+    /// To return cookies from your function, do not manually add `set-cookie`
+    /// headers. Set the `cookies` field instead.
     headers: []const KeyVal = &.{},
     /// The body of the response.
     body: ResponseBody = .{
         .textual = "",
     },
 
-    /// A pre-encoded response for a HTTP 500 Internal Server Error.
+    /// A pre-encoded response for an HTTP 500 Internal Server Error.
     ///
-    /// Useful for cases when encoding a dynamic response is impossible (e.g. can’t allocate).
-    pub const internal_server_error = "{\"statusCode\":500,body:\"Internal Server Error\"}";
+    /// Useful for cases when encoding a dynamic response is impossible (e.g.
+    /// can’t allocate).
+    pub const internal_server_error =
+        "{\"statusCode\":500,body:\"Internal Server Error\"}";
 };
 
 pub fn encodeResponse(gpa: Allocator, res: Response) ![]const u8 {
@@ -140,7 +146,7 @@ test Response {
     ++ "}", binary_encoded);
 }
 
-/// Open an HTTP streaming response.
+/// Open a streaming HTTP response.
 ///
 /// ```zig
 /// try lambda.url.openStream(ctx, stream, .{
@@ -201,10 +207,10 @@ pub const Request = struct {
     /// Each cookie is represented as a string in the format `CookieName=CookieValue`.
     cookies: []const KeyVal = &.{},
     /// The request’s headers.
-    /// Headers with multiple values will concatenate them with a comma.
+    /// Headers with multiple values are concatenated with a comma.
     headers: []const KeyVal = &.{},
     /// The request’s query parameters.
-    /// Parameters with multiple values will concatenate them with a comma.
+    /// Parameters with multiple values are concatenated with a comma.
     query_parameters: []const KeyVal = &.{},
     /// The body of the request.
     /// If the content type of the request is binary, the body is base64-encoded.
@@ -365,7 +371,8 @@ pub const RequestContext = struct {
     /// An object that contains details about the HTTP request.
     http: RequestHttp = .{},
 
-    /// An object that contains information about the caller identity, if the function URL uses the _AWS_IAM_ auth type.
+    /// An object that contains information about the caller identity, if the
+    /// function URL uses the _AWS_IAM_ auth type.
     /// Otherwise, Lambda sets this to `.none`.
     authorizer: RequestAuthorizer = .none,
 
@@ -466,7 +473,7 @@ pub const RequestHttp = struct {
     /// then the raw path value is `/example/test/demo`.
     path: ?[]const u8 = null,
 
-    /// The protocol of the request. For exmaple: `HTTP/1.1`.
+    /// The protocol of the request. For example: `HTTP/1.1`.
     protocol: ?[]const u8 = null,
 
     /// The source IP address of the immediate TCP connection making the request.

@@ -1,4 +1,4 @@
-//! Returns the function’s metadata, environment variables and the provided payload.
+//! Returns the function’s metadata, environment variables, and the provided payload.
 //!
 //! 🛑 WARNING 🛑 Deploy with caution! This demo may expose sensitive data to the public.
 const std = @import("std");
@@ -17,7 +17,7 @@ fn handler(ctx: lambda.Context, payload: []const u8) ![]const u8 {
     // Payload
     try w.print("\"payload\":{s}", .{payload});
 
-    // Function Metadata
+    // Function metadata
     const cfg = ctx.config;
     try w.writeAll(",\"function_meta\":{");
     try w.print("\"aws_region\":\"{s}\",", .{cfg.aws_region});
@@ -33,13 +33,13 @@ fn handler(ctx: lambda.Context, payload: []const u8) ![]const u8 {
     try w.print("\"log_stream\":\"{s}\"", .{cfg.log_stream});
     try w.writeByte('}');
 
-    // Runtime Metadata
+    // Runtime metadata
     const meta = try ctx.runtimeMetadata();
     try w.writeAll(",\"runtime_meta\":{");
     try w.print("\"availability_zone_id\":\"{s}\"", .{meta.availability_zone_id});
     try w.writeByte('}');
 
-    // Invocation Metadata
+    // Invocation metadata
     const req = ctx.request;
     try w.writeAll(",\"invocation_meta\":{");
     try w.print("\"request_id\":\"{s}\",", .{req.id});

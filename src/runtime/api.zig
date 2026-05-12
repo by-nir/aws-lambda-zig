@@ -49,8 +49,8 @@ pub const ErrorResponse = struct {
     }
 };
 
-/// Non-recoverable initialization error. Runtime should exit after reporting
-/// the error. Error will be served in response to the first invoke.
+/// Non-recoverable initialization error. The runtime should exit after
+/// reporting the error. The error is served in response to the first invoke.
 pub fn sendInitFail(arena: Allocator, client: *Client, err: ErrorRequest) Error!InitFailResult {
     const result = try sendError(arena, client, URL_INIT_FAIL, "Runtime", err);
     return .init(arena, result);
@@ -143,9 +143,9 @@ pub fn streamInvocationClose(
     return .init(arena, &result);
 }
 
-/// Runtime makes this request in order to submit an error response. It can be
-/// either a function error, or a runtime error. Error will be served in
-/// response to the invoke.
+/// The runtime makes this request to submit an error response. It can be
+/// either a function error or a runtime error. The error is served in
+/// response to the invocation.
 pub fn sendInvocationFail(
     arena: Allocator,
     client: *Client,
@@ -258,7 +258,7 @@ pub const InvocationEvent = struct {
     /// AWS request ID associated with the request.
     request_id: []const u8,
 
-    /// X-Ray tracing id.
+    /// X-Ray trace ID.
     xray_trace: []const u8,
 
     /// The function ARN requested.

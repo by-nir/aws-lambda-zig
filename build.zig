@@ -83,6 +83,6 @@ fn addDemo(
 
     const install_exe = b.addInstallArtifact(exe, .{});
 
-    const build_exe_step = b.step("demo:" ++ name, "Build " ++ name ++ " tests");
+    const build_exe_step = b.step("demo:" ++ name, "Build the " ++ name ++ " demo");
     build_exe_step.dependOn(&install_exe.step);
 }

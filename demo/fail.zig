@@ -1,4 +1,4 @@
-//! Always returns an error
+//! Always returns an error.
 //!
 //! The runtime logs the error to _CloudWatch_.
 const std = @import("std");

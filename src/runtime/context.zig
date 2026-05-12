@@ -34,7 +34,7 @@ pub const Context = struct {
     /// Not intended for user access.
     _: Internal,
 
-    /// Return the environmant value associated with a key.
+    /// Return the environment value associated with a key.
     pub fn env(self: @This(), key: []const u8) ?[]const u8 {
         return self._.kv.get(key);
     }
@@ -69,18 +69,18 @@ pub const Context = struct {
         /// Handler location configured on the function.
         func_handler: []const u8 = "",
 
-        /// AWS Region where the Lambda function is executed.
+        /// AWS Region in which the Lambda function is running.
         aws_region: []const u8 = DEFAULT_REGION,
 
-        /// Access key obtained from the function's
+        /// Access key ID obtained from the function's
         /// [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
         aws_access_id: []const u8 = "",
 
-        /// Access key obtained from the function's
+        /// Secret access key obtained from the function's
         /// [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
         aws_access_secret: []const u8 = "",
 
-        /// Access key obtained from the function's
+        /// Session token obtained from the function's
         /// [execution role](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html).
         aws_session_token: []const u8 = "",
 
@@ -101,7 +101,7 @@ pub const Context = struct {
         /// AWS request ID associated with the request.
         id: []const u8 = "",
 
-        /// X-Ray tracing id.
+        /// X-Ray trace ID.
         xray_trace: []const u8 = "",
 
         /// The function ARN requested.
@@ -163,7 +163,7 @@ pub fn loadMeta(ctx: *Context, env: *const std.process.Environ.Map) void {
     if (env.get("AWS_SECRET_ACCESS_KEY")) |v| cfg.aws_access_secret = v;
 }
 
-/// Update the event-sepcific metadata fields.
+/// Update the event-specific metadata fields.
 pub fn updateMeta(ctx: *Context, event: api.InvocationEvent) void {
     ctx.request.id = event.request_id;
     ctx.request.xray_trace = event.xray_trace;

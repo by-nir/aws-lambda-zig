@@ -1,4 +1,4 @@
-//! Force the Lambda function instance the terminate after returning a response.
+//! Force the Lambda function instance to terminate after returning a response.
 //!
 //! 🛑 Use with caution! Only use this method when you assume the function
 //! won’t behave as expected in the following invocation.
