@@ -7,6 +7,12 @@ const DEFAULT_MEMORY_MB: u16 = 128;
 const DEFAULT_REGION: []const u8 = "us-east-1";
 const DEFAULT_INIT_TYPE = Context.ConfigMeta.InitType.on_demand;
 
+pub const Internal = struct {
+    client: *HttpClient,
+    force_destroy: *bool,
+    kv: *const std.process.Environ.Map = undefined,
+};
+
 pub const Context = struct {
     /// I/O interface for performing network and file operations.
     io: std.Io,
@@ -24,18 +30,18 @@ pub const Context = struct {
     config: ConfigMeta = .{},
     /// Request metadata of the invocation.
     request: RequestMeta = .{},
-    __client__: *HttpClient,
-    __force_destroy__: *bool,
-    __kv__: *const std.process.Environ.Map = undefined,
+    /// Internal fields used by the runtime.
+    /// Not intended for user access.
+    _: Internal,
 
     /// Return the environmant value associated with a key.
     pub fn env(self: @This(), key: []const u8) ?[]const u8 {
-        return self.__kv__.get(key);
+        return self._.kv.get(key);
     }
 
     pub const RuntimeMetadata = rt_meta.RuntimeMetadata;
     pub fn runtimeMetadata(self: @This()) !RuntimeMetadata {
-        return rt_meta.getRuntimeMetadata(self.arena, self.__client__, self.__kv__);
+        return rt_meta.getRuntimeMetadata(self.arena, self._.client, self._.kv);
     }
 
     /// This will crash the runtime AFTER returning the response to the client.
@@ -44,7 +50,7 @@ pub const Context = struct {
     /// Warning: Use with caution! Only use this method when you assume the function
     /// won’t behave as expected in the following invocation.
     pub fn forceTerminateAfterResponse(self: @This()) void {
-        self.__force_destroy__.* = true;
+        self._.force_destroy.* = true;
     }
 
     pub const ConfigMeta = struct {
@@ -121,7 +127,8 @@ pub const Context = struct {
 /// https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html
 pub fn loadMeta(ctx: *Context, env: *const std.process.Environ.Map) void {
     const cfg = &ctx.config;
-    ctx.__kv__ = env;
+
+    ctx._.kv = env;
 
     if (env.get("AWS_REGION")) |v|
         cfg.aws_region = v

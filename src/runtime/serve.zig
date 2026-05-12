@@ -117,8 +117,10 @@ pub const Server = struct {
             .io = self.io,
             .gpa = self.gpa,
             .arena = self.arena.allocator(),
-            .__client__ = &self.http,
-            .__force_destroy__ = &force_terminate,
+            ._ = ctx.Internal{
+                .client = &self.http,
+                .force_destroy = &force_terminate,
+            },
         };
         ctx.loadMeta(&context, self.env);
 
