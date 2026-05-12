@@ -70,6 +70,7 @@ fn addDemo(
         .root_source_file = b.path(path),
         // .strip = true,
         // .link_libc = true,
+        .single_threaded = true,
         .imports = &.{
             .{ .name = "aws-lambda", .module = lib },
         },

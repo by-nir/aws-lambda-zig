@@ -10,12 +10,22 @@ Write _AWS Lambda_ functions in the Zig programming language to achieve blazing 
 
 ## Benchmark
 Using zig allows creating small and fast functions.<br />
-Minimal [Hello World demo](#hello-world) (arm64, 256 MiB, Amazon Linux 2023):
+Minimal [Hello World demo](#hello-world):
 
-- ❄️ `~11ms` cold start invocation duration
-- ⚡ `~1.5ms` warm invocation duration
-- 💾 `12 MiB` max memory consumption
-- ⚖️ `0.36 MiB` function size (zip)
+- ❄️ Cold invocation: `~11.5 ms`
+- ⚡ Warm invocation: between `0.9 ms` and `1.5 ms`
+- 💾 Max memory: `12 MB`
+- 📦 Function size: `362 KB` (zip, stripped)
+
+<details>
+<summary>Testing environment and settings</summary>
+<ul>
+<li>Architecture: ARM64 (Graviton2)</li>
+<li>OS: Amazon Linux 2023</li>
+<li>Memory: 256 MB</li>
+<li>Build options: single threaded, strip symbols</li>
+</ul>
+</details>
 
 ## Features
 - [x] Runtime API
@@ -84,8 +94,9 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "aws-lambda", .module = runtime },
         },
-        // .link_libc = true, // Uncomment if glibc is required.
-        // .strip = true, // Uncomment if no stack traces are needed.
+        // .link_libc = true, // If glibc is required
+        // .strip = true, // If debug symbols aren’t required
+        // .single_threaded = true, // For small Lambda (RAM ≤ 1,769 MB)
     });
 
     // Compile and executable
@@ -161,8 +172,9 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "aws-lambda", .module = runtime },
         },
-        // .link_libc = true, // Uncomment if glibc is required.
-        // .strip = true, // Uncomment if no stack traces are needed.
+        // .link_libc = true, // If glibc is required
+        // .strip = true, // If debug symbols aren’t required
+        // .single_threaded = true, // For small Lambda (RAM ≤ 1,769 MB)
     });
 
     // Compile and executable
@@ -177,7 +189,7 @@ pub fn build(b: *std.Build) void {
 ### Event Handler
 The event handler is the entry point for the Lambda function.
 
-The library provides a runtime that handles the event lifecycle and communication with the Lambda’s execution environment. With it, you can focus on imlementing only the meaningful part of processing and responding to the event.
+The library provides a runtime that handles the event lifecycle and communication with the Lambda’s execution environment. With it, you can focus on implementing only the meaningful part of processing and responding to the event.
 
 Since the library manages the lifecycle, it expects the handler to have a specific signature. _Note that [response streaming](#response-streaming) has a dedicated lifecycle and handler signature._
 
