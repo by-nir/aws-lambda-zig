@@ -1,9 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
+const testing = std.testing;
 const Allocator = mem.Allocator;
 const Scanner = std.json.Scanner;
-const testing = std.testing;
-const test_alloc = testing.allocator;
 const json = @import("../utils/json.zig");
 const KeyVal = @import("../utils/KeyVal.zig");
 const hdl = @import("../runtime/handle.zig");
@@ -42,65 +41,65 @@ pub const Response = struct {
 
     /// A pre-encoded response for a HTTP 500 Internal Server Error.
     ///
-    /// Usefaul for cases when encoding a dynamic response is impossible (e.g. can’t allocate).
+    /// Useful for cases when encoding a dynamic response is impossible (e.g. can’t allocate).
     pub const internal_server_error = "{\"statusCode\":500,body:\"Internal Server Error\"}";
+};
 
-    pub fn encode(self: Response, gpa: Allocator) ![]const u8 {
-        var buffer: std.Io.Writer.Allocating = .init(gpa);
-        errdefer buffer.deinit();
+pub fn encodeResponse(gpa: Allocator, res: Response) ![]const u8 {
+    var buffer: std.Io.Writer.Allocating = .init(gpa);
+    errdefer buffer.deinit();
 
-        try buffer.writer.writeByte('{');
-        try buffer.writer.print("\"statusCode\":{d}", .{@intFromEnum(self.status_code)});
+    try buffer.writer.writeByte('{');
+    try buffer.writer.print("\"statusCode\":{d}", .{@intFromEnum(res.status_code)});
 
-        if (self.cookies.len > 0) {
-            try buffer.writer.writeAll(",\"cookies\":[");
-            for (self.cookies, 0..) |cookie, i| {
-                if (i != 0) try buffer.writer.writeByte(',');
-                try std.json.Stringify.encodeJsonString(cookie, .{}, &buffer.writer);
-            }
-            try buffer.writer.writeByte(']');
+    if (res.cookies.len > 0) {
+        try buffer.writer.writeAll(",\"cookies\":[");
+        for (res.cookies, 0..) |cookie, i| {
+            if (i != 0) try buffer.writer.writeByte(',');
+            try std.json.Stringify.encodeJsonString(cookie, .{}, &buffer.writer);
+        }
+        try buffer.writer.writeByte(']');
+    }
+
+    if (res.headers.len > 0 or res.content_type != null) {
+        try buffer.writer.writeAll(",\"headers\":{");
+
+        var has_ct = false;
+        if (res.content_type) |ct| {
+            try buffer.writer.writeAll("\"Content-Type\":");
+            try std.json.Stringify.encodeJsonString(ct, .{}, &buffer.writer);
+            has_ct = true;
         }
 
-        if (self.headers.len > 0 or self.content_type != null) {
-            try buffer.writer.writeAll(",\"headers\":{");
-
-            var has_ct = false;
-            if (self.content_type) |ct| {
-                try buffer.writer.writeAll("\"Content-Type\":");
-                try std.json.Stringify.encodeJsonString(ct, .{}, &buffer.writer);
-                has_ct = true;
-            }
-
-            for (self.headers, 0..) |header, i| {
-                if (has_ct or i != 0) try buffer.writer.writeByte(',');
-                try std.json.Stringify.encodeJsonString(header.key, .{}, &buffer.writer);
-                try buffer.writer.writeByte(':');
-                try std.json.Stringify.encodeJsonString(header.value, .{}, &buffer.writer);
-            }
-
-            try buffer.writer.writeByte('}');
-        }
-
-        switch (self.body) {
-            .textual => |s| if (s.len > 0) {
-                try buffer.writer.writeAll(",\"body\":");
-                try std.json.Stringify.encodeJsonString(s, .{}, &buffer.writer);
-            },
-            .binary => |s| if (s.len > 0) {
-                try buffer.writer.writeAll(",\"isBase64Encoded\":true");
-                try buffer.writer.writeAll(",\"body\":\"");
-                try std.base64.standard.Encoder.encodeWriter(&buffer.writer, s);
-                try buffer.writer.writeByte('"');
-            },
+        for (res.headers, 0..) |header, i| {
+            if (has_ct or i != 0) try buffer.writer.writeByte(',');
+            try std.json.Stringify.encodeJsonString(header.key, .{}, &buffer.writer);
+            try buffer.writer.writeByte(':');
+            try std.json.Stringify.encodeJsonString(header.value, .{}, &buffer.writer);
         }
 
         try buffer.writer.writeByte('}');
-        return buffer.toOwnedSlice();
     }
-};
+
+    switch (res.body) {
+        .textual => |s| if (s.len > 0) {
+            try buffer.writer.writeAll(",\"body\":");
+            try std.json.Stringify.encodeJsonString(s, .{}, &buffer.writer);
+        },
+        .binary => |s| if (s.len > 0) {
+            try buffer.writer.writeAll(",\"isBase64Encoded\":true");
+            try buffer.writer.writeAll(",\"body\":\"");
+            try std.base64.standard.Encoder.encodeWriter(&buffer.writer, s);
+            try buffer.writer.writeByte('"');
+        },
+    }
+
+    try buffer.writer.writeByte('}');
+    return buffer.toOwnedSlice();
+}
 
 test Response {
-    const text_response = Response{
+    const text_encoded = try encodeResponse(testing.allocator, .{
         .status_code = .created,
         .content_type = "application/json",
         .cookies = &.{
@@ -114,10 +113,8 @@ test Response {
         .body = .{
             .textual = "{\"message\":\"Hello, world!\"}",
         },
-    };
-
-    const text_encoded = try text_response.encode(test_alloc);
-    defer test_alloc.free(text_encoded);
+    });
+    defer testing.allocator.free(text_encoded);
 
     try testing.expectEqualStrings("{" ++
         \\"statusCode":201,
@@ -129,12 +126,10 @@ test Response {
         \\"body":"{\"message\":\"Hello, world!\"}"
     ++ "}", text_encoded);
 
-    const binary_response = Response{
+    const binary_encoded = try encodeResponse(testing.allocator, .{
         .body = .{ .binary = "foo108!" },
-    };
-
-    const binary_encoded = try binary_response.encode(test_alloc);
-    defer test_alloc.free(binary_encoded);
+    });
+    defer testing.allocator.free(binary_encoded);
 
     try testing.expectEqualStrings("{" ++
         \\"statusCode":200,
@@ -187,10 +182,11 @@ const StreamingResponse = struct {
         var response = self.response;
         response.body = .{ .textual = "" };
 
-        const prelude = response.encode(self.arena) catch {
+        if (encodeResponse(self.arena, response)) |prelude| {
+            try writer.writeAll(prelude);
+        } else |_| {
             return std.Io.Writer.Error.WriteFailed;
-        };
-        try writer.writeAll(prelude);
+        }
     }
 };
 
@@ -218,45 +214,6 @@ pub const Request = struct {
     /// An object that contains additional information about the request.
     request_context: RequestContext = .{},
 
-    pub fn init(gpa: Allocator, event: []const u8) !Request {
-        var scanner = Scanner.initCompleteInput(gpa, event);
-        defer scanner.deinit();
-
-        var request = Request{};
-        errdefer request.deinit(gpa);
-
-        var it = try json.ObjectIterator.init(gpa, &scanner);
-        errdefer it.deinit();
-        while (try it.next()) |key| {
-            if (mem.eql(u8, "rawPath", key)) {
-                request.raw_path = try json.nextStringOptional(&scanner, null);
-            } else if (mem.eql(u8, "rawQueryString", key)) {
-                request.raw_query = try json.nextStringOptional(&scanner, null);
-            } else if (mem.eql(u8, "cookies", key)) {
-                request.cookies = try json.nextKeyValList(gpa, &scanner, "=");
-            } else if (mem.eql(u8, "headers", key)) {
-                request.headers = try json.nextKeyValMap(gpa, &scanner);
-            } else if (mem.eql(u8, "queryStringParameters", key)) {
-                request.query_parameters = try json.nextKeyValMap(gpa, &scanner);
-            } else if (mem.eql(u8, "body", key)) {
-                request.body = try json.nextStringOptional(&scanner, gpa);
-            } else if (mem.eql(u8, "isBase64Encoded", key)) {
-                request.body_is_base64 = try json.nextBool(&scanner);
-            } else if (mem.eql(u8, "requestContext", key)) {
-                request.request_context = try RequestContext.init(gpa, &scanner);
-            } else if (mem.eql(u8, "version", key)) {
-                try json.nextStringEqualErr(&scanner, "2.0", error.UnsupportedEventVersion);
-            } else if (mem.eql(u8, "routeKey", key)) {
-                try json.nextStringEqualErr(&scanner, "$default", error.UnexpectedRouteKey);
-            } else {
-                try scanner.skipValue();
-            }
-        }
-
-        try json.nextExpect(&scanner, .end_of_document);
-        return request;
-    }
-
     pub fn deinit(self: Request, gpa: Allocator) void {
         json.freeKeyValList(gpa, self.cookies);
         json.freeKeyValMap(gpa, self.headers);
@@ -266,18 +223,57 @@ pub const Request = struct {
     }
 };
 
+pub fn parseRequest(gpa: Allocator, event: []const u8) !Request {
+    var scanner = Scanner.initCompleteInput(gpa, event);
+    defer scanner.deinit();
+
+    var request = Request{};
+    errdefer request.deinit(gpa);
+
+    var it = try json.ObjectIterator.init(gpa, &scanner);
+    errdefer it.deinit();
+    while (try it.next()) |key| {
+        if (mem.eql(u8, "rawPath", key)) {
+            request.raw_path = try json.nextStringOptional(&scanner, null);
+        } else if (mem.eql(u8, "rawQueryString", key)) {
+            request.raw_query = try json.nextStringOptional(&scanner, null);
+        } else if (mem.eql(u8, "cookies", key)) {
+            request.cookies = try json.nextKeyValList(gpa, &scanner, "=");
+        } else if (mem.eql(u8, "headers", key)) {
+            request.headers = try json.nextKeyValMap(gpa, &scanner);
+        } else if (mem.eql(u8, "queryStringParameters", key)) {
+            request.query_parameters = try json.nextKeyValMap(gpa, &scanner);
+        } else if (mem.eql(u8, "body", key)) {
+            request.body = try json.nextStringOptional(&scanner, gpa);
+        } else if (mem.eql(u8, "isBase64Encoded", key)) {
+            request.body_is_base64 = try json.nextBool(&scanner);
+        } else if (mem.eql(u8, "requestContext", key)) {
+            request.request_context = try RequestContext.init(gpa, &scanner);
+        } else if (mem.eql(u8, "version", key)) {
+            try json.nextStringEqualErr(&scanner, "2.0", error.UnsupportedEventVersion);
+        } else if (mem.eql(u8, "routeKey", key)) {
+            try json.nextStringEqualErr(&scanner, "$default", error.UnexpectedRouteKey);
+        } else {
+            try scanner.skipValue();
+        }
+    }
+
+    try json.nextExpect(&scanner, .end_of_document);
+    return request;
+}
+
 test Request {
     try testing.expectError(
         error.UnsupportedEventVersion,
-        Request.init(test_alloc, "{\"version\": \"3.0\"}"),
+        parseRequest(testing.allocator, "{\"version\": \"3.0\"}"),
     );
 
     try testing.expectError(
         error.UnexpectedRouteKey,
-        Request.init(test_alloc, "{\"routeKey\": \"$foo\"}"),
+        parseRequest(testing.allocator, "{\"routeKey\": \"$foo\"}"),
     );
 
-    const request = try Request.init(test_alloc,
+    const request = try parseRequest(testing.allocator,
         \\{
         \\  "version": "2.0",
         \\  "routeKey": "$default",
@@ -310,7 +306,7 @@ test Request {
         \\  }
         \\}
     );
-    defer request.deinit(test_alloc);
+    defer request.deinit(testing.allocator);
 
     try testing.expectEqualDeep(Request{
         .raw_path = "/my/path",
@@ -415,7 +411,7 @@ pub const RequestContext = struct {
 };
 
 test RequestContext {
-    var scanner = Scanner.initCompleteInput(test_alloc,
+    var scanner = Scanner.initCompleteInput(testing.allocator,
         \\{
         \\  "accountId": "123456789012",
         \\  "apiId": "<urlid>",
@@ -439,8 +435,8 @@ test RequestContext {
     );
     defer scanner.deinit();
 
-    const context = try RequestContext.init(test_alloc, &scanner);
-    defer context.deinit(test_alloc);
+    const context = try RequestContext.init(testing.allocator, &scanner);
+    defer context.deinit(testing.allocator);
 
     try testing.expectEqualDeep(RequestContext{
         .account_id = "123456789012",
@@ -510,7 +506,7 @@ pub const RequestHttp = struct {
 };
 
 test RequestHttp {
-    var scanner = Scanner.initCompleteInput(test_alloc,
+    var scanner = Scanner.initCompleteInput(testing.allocator,
         \\{
         \\  "method": "POST",
         \\  "path": "/my/path",
@@ -521,8 +517,8 @@ test RequestHttp {
     );
     defer scanner.deinit();
 
-    const http = try RequestHttp.init(test_alloc, &scanner);
-    defer http.deinit(test_alloc);
+    const http = try RequestHttp.init(testing.allocator, &scanner);
+    defer http.deinit(testing.allocator);
 
     try testing.expectEqualDeep(RequestHttp{
         .method = .POST,
@@ -558,16 +554,22 @@ pub const RequestAuthorizer = union(enum) {
 };
 
 test RequestAuthorizer {
-    var scanner = Scanner.initCompleteInput(test_alloc, "null");
+    var scanner = Scanner.initCompleteInput(testing.allocator, "null");
     defer scanner.deinit();
-    try testing.expectEqual(RequestAuthorizer.none, try RequestAuthorizer.from(test_alloc, &scanner));
+    try testing.expectEqual(
+        RequestAuthorizer.none,
+        try RequestAuthorizer.from(testing.allocator, &scanner),
+    );
 
     scanner.deinit();
-    scanner = Scanner.initCompleteInput(test_alloc, "{\"foo\": \"bar\"}");
-    try testing.expectError(error.UnexpectedAuthorizer, RequestAuthorizer.from(test_alloc, &scanner));
+    scanner = Scanner.initCompleteInput(testing.allocator, "{\"foo\": \"bar\"}");
+    try testing.expectError(
+        error.UnexpectedAuthorizer,
+        RequestAuthorizer.from(testing.allocator, &scanner),
+    );
 
     scanner.deinit();
-    scanner = Scanner.initCompleteInput(test_alloc,
+    scanner = Scanner.initCompleteInput(testing.allocator,
         \\{
         \\  "iam": { "userId": "AIDACOSFODNN7EXAMPLE2" }
         \\}
@@ -576,17 +578,20 @@ test RequestAuthorizer {
         RequestAuthorizer{
             .iam = .{ .user_id = "AIDACOSFODNN7EXAMPLE2" },
         },
-        try RequestAuthorizer.from(test_alloc, &scanner),
+        try RequestAuthorizer.from(testing.allocator, &scanner),
     );
 
     scanner.deinit();
-    scanner = Scanner.initCompleteInput(test_alloc,
+    scanner = Scanner.initCompleteInput(testing.allocator,
         \\{
         \\  "iam": { "userId": "AIDACOSFODNN7EXAMPLE2" },
         \\  "foo": "bar"
         \\}
     );
-    try testing.expectError(error.UnexpectedAuthorizer, RequestAuthorizer.from(test_alloc, &scanner));
+    try testing.expectError(
+        error.UnexpectedAuthorizer,
+        RequestAuthorizer.from(testing.allocator, &scanner),
+    );
 }
 
 pub const RequestAuthorizerIam = struct {
@@ -636,7 +641,7 @@ pub const RequestAuthorizerIam = struct {
 };
 
 test RequestAuthorizerIam {
-    var scanner = Scanner.initCompleteInput(test_alloc,
+    var scanner = Scanner.initCompleteInput(testing.allocator,
         \\{
         \\  "accessKey": "AKIAIOSFODNN7EXAMPLE",
         \\  "accountId": "111122223333",
@@ -658,7 +663,7 @@ test RequestAuthorizerIam {
             .user_arn = "arn:aws:iam::111122223333:user/example-user",
             .user_id = "AIDACOSFODNN7EXAMPLE2",
         },
-        try RequestAuthorizerIam.from(test_alloc, &scanner),
+        try RequestAuthorizerIam.from(testing.allocator, &scanner),
     );
 }
 

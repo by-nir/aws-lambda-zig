@@ -1,15 +1,14 @@
 //! Use Lambda URLs to serve dynamic web pages.
 //!
-//! 👉 Be sure to configure the Lambda function with URL enabled and BUFFERED invoke mode.
+//! ⚠️ This is not a production-ready web server, don’t use it in production!
+//!
+//! 👉 Be sure to configure the Lambda function with URL enabled and BUFFERED
+//! invoke mode.
 const std = @import("std");
 const mem = std.mem;
 const lambda = @import("aws-lambda");
 
-const content_type: lambda.KeyVal = .{
-    .key = "Content-Type",
-    .value = "text/html; charset=utf-8",
-};
-
+const html_type = "text/html; charset=utf-8";
 const global_nav = "<nav><a href=\"/\">← Homepage</a></nav>\n\n";
 
 pub fn main(init: std.process.Init) void {
@@ -19,18 +18,20 @@ pub fn main(init: std.process.Init) void {
 fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
     // Decode the Lambda URLs event.
     // We pass an arena allocator, so we don’t need to deinit.
-    const request: lambda.url.Request = try .init(ctx.arena, event);
+    const request = try lambda.url.parseRequest(ctx.arena, event);
 
     // Use the router the serve dynamic content based on the event’s request.
     // If rendering the response fails, we instead return an error page.
     return router(ctx, request) catch |err| {
         // ctx.forceTerminateAfterResponse();
-        // /\ Uncomment the above line if you assume the function won’t behave
+        // 👆 Uncomment the above line if you assume the function won’t behave
         // as expected in the following invocation. The Lambda execution environment
         // will terminate the function instance AFTER rendering the error page.
 
         // Log the error to CloudWatch:
-        lambda.log.err("Web server failed; raw path: `{s}`.", .{request.raw_path orelse ""});
+        lambda.log.err("Web server failed; raw path: `{s}`.", .{
+            request.raw_path orelse "",
+        });
 
         // Render a custom error page:
         return internalErrorPage(ctx, err)
@@ -40,8 +41,8 @@ fn handler(ctx: lambda.Context, event: []const u8) ![]const u8 {
     };
 }
 
-/// Return a different response based on the path.
-/// Each page will use `lambda.url.Response` to compose its own response.
+/// Returns a different response based on the path.
+/// Each page will use `lambda.url.encodeResponse()` to compose its own response.
 fn router(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
     const path = req.request_context.http.path orelse "/";
     if (mem.eql(u8, "/", path)) {
@@ -63,11 +64,12 @@ fn router(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
 
 /// Static HTML response containing links to other pages.
 fn homePage(ctx: lambda.Context) ![]const u8 {
-    const response: lambda.url.Response = .{
+    return lambda.url.encodeResponse(ctx.arena, .{
+        .content_type = "text/html; charset=utf-8",
         .headers = &.{
-            content_type,
             // This page is static, so we can ask for it to be cached for a while.
-            // Remove or comment-out this line if you want to see the page update immediately.
+            // Remove or comment-out this line if you want to see the page
+            // update immediately.
             .{ .key = "Cache-Control", .value = "max-age=300, immutable" },
         },
         .body = .{ .textual =
@@ -83,8 +85,7 @@ fn homePage(ctx: lambda.Context) ![]const u8 {
         \\  <li>🧨 <a href="/crash">500</a></li>
         \\</ul>
         },
-    };
-    return response.encode(ctx.arena);
+    });
 }
 
 /// The `url.Request` contains both the HTTP request and additional AWS metadata.
@@ -99,13 +100,10 @@ fn ipAddrPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         try html.writer.writeAll("<p>Sorry, I don’t know your IP address.</p>");
     }
 
-    const response = lambda.url.Response{
-        .headers = &.{content_type},
-        .body = .{
-            .textual = try html.toOwnedSlice(),
-        },
-    };
-    return response.encode(ctx.arena);
+    return lambda.url.encodeResponse(ctx.arena, .{
+        .content_type = html_type,
+        .body = .{ .textual = try html.toOwnedSlice() },
+    });
 }
 
 /// Use a parsed query parameter provided by the decoded request to greet the user.
@@ -126,15 +124,16 @@ fn greetPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
     try html.writer.print("<h1>Hello, {s}!</h1>", .{name});
 
     try html.writer.writeAll("\n\n");
-    try html.writer.writeAll("<p><em>Hint:</em> Change the <code>name</code> parameter in the URL...</p>");
+    try html.writer.writeAll(
+        \\<p>
+        \\  <em>Hint:</em> Change the <code>name</code> parameter in the URL...
+        \\</p>
+    );
 
-    const response = lambda.url.Response{
-        .headers = &.{content_type},
-        .body = .{
-            .textual = try html.toOwnedSlice(),
-        },
-    };
-    return response.encode(ctx.arena);
+    return lambda.url.encodeResponse(ctx.arena, .{
+        .content_type = html_type,
+        .body = .{ .textual = try html.toOwnedSlice() },
+    });
 }
 
 /// Generate dynamic HTML form that mutates the `store` cookie.
@@ -170,9 +169,7 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         try new_cookie.writer.writeAll("store=");
         try std.base64.standard.Encoder.encodeWriter(&new_cookie.writer, value);
         try new_cookie.writer.writeAll("; Path=/cookiejar; Max-Age=432000; HttpOnly; Secure; SameSite=Lax");
-        set_cookies = &.{
-            try new_cookie.toOwnedSlice(),
-        };
+        set_cookies = &.{try new_cookie.toOwnedSlice()};
     }
 
     // Render a form to display and update the stored value.
@@ -186,29 +183,23 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         \\</form>
     , .{ value, max_len });
 
-    const response = lambda.url.Response{
-        .headers = &.{content_type},
+    return lambda.url.encodeResponse(ctx.arena, .{
         .cookies = set_cookies,
-        .body = .{
-            .textual = try html.toOwnedSlice(),
-        },
-    };
-    return response.encode(ctx.arena);
+        .content_type = html_type,
+        .body = .{ .textual = try html.toOwnedSlice() },
+    });
 }
 
 /// Generate a text file with the request’s timestamp.
 fn downloadPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
-    const response = lambda.url.Response{
-        .headers = &.{
-            // We respond with plain text instead of HTML like in the other pages.
-            .{ .key = "Content-Type", .value = "text/plain" },
-        },
-        .body = .{
-            // Since we are generating a downloadable file we set content to `.binary` instead of `.textual`.
-            .binary = req.request_context.time.?,
-        },
-    };
-    return response.encode(ctx.arena);
+    return lambda.url.encodeResponse(ctx.arena, .{
+        // We respond with plain text instead of HTML like in the other pages.
+        .content_type = "text/plain; charset=utf-8",
+
+        // Since we are generating a downloadable file we use a `.binary` body
+        // instead of `.textual`.
+        .body = .{ .binary = req.request_context.time.? },
+    });
 }
 
 /// Render a custom error page for the given path.
@@ -222,17 +213,15 @@ fn errorPage(ctx: lambda.Context, path: []const u8) ![]const u8 {
         .{path},
     );
 
-    const response = lambda.url.Response{
+    return lambda.url.encodeResponse(ctx.arena, .{
         .status_code = .not_found, // HTTP 404
-        .headers = &.{content_type},
-        .body = .{
-            .textual = html,
-        },
-    };
-    return response.encode(ctx.arena);
+        .content_type = html_type,
+        .body = .{ .textual = html },
+    });
 }
 
-/// This page will always crash, the `handler` should catch the error and return a custom error page.
+/// This page will always crash, the `handler` should catch the error and return
+/// a custom error page.
 fn crashPage() ![]const u8 {
     return error.RandomServerCrash;
 }
@@ -248,12 +237,9 @@ fn internalErrorPage(ctx: lambda.Context, err: anyerror) ![]const u8 {
         .{@errorName(err)},
     );
 
-    const response = lambda.url.Response{
+    return lambda.url.encodeResponse(ctx.arena, .{
         .status_code = .internal_server_error, // HTTP 500
-        .headers = &.{content_type},
-        .body = .{
-            .textual = html,
-        },
-    };
-    return response.encode(ctx.arena);
+        .content_type = html_type,
+        .body = .{ .textual = html },
+    });
 }

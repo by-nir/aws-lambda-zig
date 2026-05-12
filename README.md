@@ -371,7 +371,7 @@ zig build demo:hello --release -Darch=ARCH_OPTION
 ```
 
 ### Debug
-🛑 _Deploy with caution! May expose sensitive data to the public._
+⚠️ _Deploy with caution! May expose sensitive data to the public._
 
 Returns the raw payload as-is:
 ```console
@@ -399,7 +399,7 @@ Force the Lambda function instance the terminate after returning a response:
 zig build demo:terminate --release -Darch=ARCH_OPTION
 ```
 
-🛑 Use with caution!
+⚠️ Use with caution!
 _Only use this method when you assume the function won’t behave as expected in the following invocation._
 
 ### Response Streaming
@@ -411,9 +411,11 @@ zig build demo:stream --release -Darch=ARCH_OPTION
 ```
 
 ### Lambda URLs
+⚠️ This is not a production-ready web server, don’t use it in production!
+
 Use Lambda URLs buffered invoke to serve dynamic web pages:
 ```console
-zig build demo:url --release -Darch=ARCH_OPTION
+zig build demo:url_buffer --release -Darch=ARCH_OPTION
 ```
 
 Use Lambda URLs response streaming to serve dynamic updates:

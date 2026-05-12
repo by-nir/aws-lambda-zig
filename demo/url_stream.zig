@@ -14,7 +14,7 @@ const HALF_SEC = std.time.ns_per_s / 2;
 fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void {
     // Decode the Lambda URLs event.
     // We pass an arena allocator, so we don’t need to deinit.
-    const request: lambda.url.Request = try .init(ctx.arena, event);
+    const request = try lambda.url.parseRequest(ctx.arena, event);
 
     const intro: []const u8 = blk: {
         // Use the request’s path to customize the response header:
