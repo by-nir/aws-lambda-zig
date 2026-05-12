@@ -41,49 +41,40 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
     });
 
     // Wait for half a second.
-    try sleepHalfSecond();
+    try ctx.io.sleep(.fromMilliseconds(500), .awake);
 
     // Append multiple to the stream’s buffer without publishing to the client.
     try writer.writeAll("<h2>Update #1</h2>");
-    try writer.print("<p>Current epoch: <time>{d}</time></p>", .{currentEpochSeconds()});
+    try writer.print(
+        "<p>Current epoch: <time>{d}</time></p>",
+        .{currentEpochSeconds(ctx.io)},
+    );
 
     // Publish the buffered data to the client.
     try stream.publish();
-    try sleepHalfSecond();
+    try ctx.io.sleep(.fromMilliseconds(500), .awake);
 
     try writer.writeAll(
         \\<h2>Update #2</h2>
         \\<p>Current epoch: 🕰️</p>
     );
     try stream.publish();
-    try sleepHalfSecond();
+    try ctx.io.sleep(.fromMilliseconds(500), .awake);
 
     // One last message to the client...
     try writer.print(
         \\<h2>Update #{d}</h2>
         \\<p>Current epoch: <time>{d}</time></p>
-    , .{ 3, currentEpochSeconds() });
+    , .{ 3, currentEpochSeconds(ctx.io) });
     try stream.publish();
 
     // We can optionally let the runtime know we have finished the response.
     // If we don't have more work to do, we can return without calling `close()`.
     try stream.close();
 
-    // Then we can proceed to other work.
-    doSomeCleanup();
+    // Then we can proceed to other work here...
 }
 
-fn doSomeCleanup() void {
-    // Some cleanup work...
-}
-
-fn sleepHalfSecond() !void {
-    try std.Io.Clock.Duration.sleep(.{
-        .clock = .awake,
-        .raw = .fromNanoseconds(HALF_SEC),
-    }, std.Options.debug_io);
-}
-
-fn currentEpochSeconds() i64 {
-    return std.Io.Clock.real.now(std.Options.debug_io).toSeconds();
+fn currentEpochSeconds(io: std.Io) i64 {
+    return std.Io.Clock.real.now(io).toSeconds();
 }

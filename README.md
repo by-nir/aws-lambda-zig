@@ -333,7 +333,7 @@ fn handler(
     try stream.publish();
 
     // Wait for half a second.
-    std.Thread.sleep(500_000_000);
+    try ctx.io.sleep(.fromMilliseconds(500), .awake);
 
     // Send additional content to the client.
     try writer.writeAll("data: Message number 2\n\n");
@@ -341,8 +341,9 @@ fn handler(
     try stream.publish();
 
     // Optionally close the stream.
-    // Even after ending the response we can still do more work in the handler.
     try stream.close();
+
+    // Even after ending the stream we can still do more work in the handler...
 }
 ```
 
