@@ -100,6 +100,7 @@ pub fn openStream(
     self: *@This(),
     path: []const u8,
     options: Options,
+    writer_buffer: []u8,
     comptime prelude_raw: []const u8,
     prelude_args: anytype,
 ) !struct { Request, BodyWriter } {
@@ -115,10 +116,10 @@ pub fn openStream(
     req.transfer_encoding = .chunked;
 
     if (prelude_raw.len == 0) {
-        const body = try req.sendBody(&.{});
+        const body = try req.sendBody(writer_buffer);
         return .{ req, body };
     } else {
-        var body = try req.sendBodyUnflushed(&.{});
+        var body = try req.sendBodyUnflushed(writer_buffer);
         try body.writer.print(prelude_raw, prelude_args);
         try body.flush();
         return .{ req, body };

@@ -212,6 +212,7 @@ pub const Server = struct {
 
     pub fn streamSuccess(
         self: *@This(),
+        buffer: []u8,
         content_type: []const u8,
         comptime prelude_raw_http: []const u8,
         prelude_args: anytype,
@@ -221,6 +222,7 @@ pub const Server = struct {
             api.streamInvocationOpen(
                 arena,
                 &self.http,
+                buffer,
                 self.request_id,
                 content_type,
                 prelude_raw_http,

@@ -79,6 +79,7 @@ pub fn sendInvocationSuccess(
 pub fn streamInvocationOpen(
     arena: Allocator,
     client: *Client,
+    buffer: []u8,
     req_id: []const u8,
     content_type: []const u8,
     comptime prelude_raw_http: []const u8,
@@ -95,8 +96,10 @@ pub fn streamInvocationOpen(
             .{ .name = STREAM_HEAD_NAME, .value = STREAM_HEAD_VAL },
             .{ .name = "Trailer", .value = ERROR_HEAD_TYPE ++ "," ++ ERROR_HEAD_BODY },
         },
-    }, prelude_raw_http, prelude_args) catch |e| {
-        log.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{ @errorName(e), path });
+    }, buffer, prelude_raw_http, prelude_args) catch |e| {
+        log.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{
+            @errorName(e), path,
+        });
         return error.ClientError;
     };
 }

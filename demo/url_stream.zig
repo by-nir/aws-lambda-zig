@@ -29,12 +29,11 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
     };
 
     // Start a textual event stream with an initial HTML response.
-    const writer = try lambda.url.openStream(ctx, stream, .{
+    var buffer: [1024]u8 = undefined;
+    const writer = try lambda.url.openStream(ctx, &buffer, stream, .{
         .status_code = .partial_content,
         .content_type = "text/html; charset=utf-8",
-        .body = .{
-            .textual = intro,
-        },
+        .body = .{ .textual = intro },
         // We can set additional headers and cookies here:
         // .headers = &.{ .{ .key = "Cache-Control", .value = "max-age=300, immutable" } },
         // .cookies = &.{ "cookie1=value1; Max-Age=86400; HttpOnly; Secure; SameSite=Lax" },

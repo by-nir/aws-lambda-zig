@@ -48,7 +48,8 @@ pub const Response = struct {
     /// Useful for cases when encoding a dynamic response is impossible (e.g.
     /// can’t allocate).
     pub const internal_server_error =
-        "{\"statusCode\":500,body:\"Internal Server Error\"}";
+        \\{"statusCode":500,body:"Internal Server Error"}
+    ;
 };
 
 pub fn encodeResponse(gpa: Allocator, res: Response) ![]const u8 {
@@ -149,7 +150,7 @@ test Response {
 /// Open a streaming HTTP response.
 ///
 /// ```zig
-/// try lambda.url.openStream(ctx, stream, .{
+/// try lambda.url.openStream(ctx, &buffer, stream, .{
 ///     .status_code = .ok,
 ///     .content_type = "text/html; charset=utf-8",
 ///     .cookies = &.{ "cookie1=value1; Max-Age=86400; HttpOnly; Secure; SameSite=Lax" },
@@ -157,13 +158,20 @@ test Response {
 ///     .body = .{ .textual = "<h1>Incoming...</h1>" },
 /// });
 /// ```
-pub fn openStream(ctx: hdl.Context, stream: hdl.Stream, response: Response) !*std.Io.Writer {
+pub fn openStream(
+    ctx: hdl.Context,
+    buferr: []u8,
+    stream: hdl.Stream,
+    response: Response,
+) !*std.Io.Writer {
     // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-runtime/src/requests.rs
     // https://aws.amazon.com/blogs/compute/using-response-streaming-with-aws-lambda-web-adapter-to-optimize-performance
-    const writer = try stream.openPrint(INTEGRATION_CONTENT_TYPE, "{f}", .{StreamingResponse{
-        .arena = ctx.arena,
-        .response = response,
-    }});
+    const writer = try stream.openPrint(buferr, INTEGRATION_CONTENT_TYPE, "{f}", .{
+        StreamingResponse{
+            .arena = ctx.arena,
+            .response = response,
+        },
+    });
 
     _ = try writer.splatByte('\x00', 8);
     try stream.publish();

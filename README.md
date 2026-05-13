@@ -338,7 +338,8 @@ fn handler(
     stream: lambda.Stream,  // Stream delegate
 ) !void {
     // Start streaming the response for a given content type.
-    const writer = try stream.open("text/event-stream");
+    var buffer: [256]u8 = undefined;
+    const writer = try stream.open(&buffer, "text/event-stream");
 
     // Append to the streaming buffer.
     try writer.writeAll("data: Message");
@@ -366,13 +367,13 @@ fn handler(
 
 Instead of returning the payload from the handler, a streaming handler uses the _stream delegate_.
 
-Once the content type is known, the handler should call `stream.open(content_type)` to open the response stream. After that, it can append content incrementally.
+Once the content type is known, the handler should call `stream.open(&buffer, content_type)` to open the response stream. After that, it can append content incrementally.
 _Closing the stream is optional._
 
 | Method | Description |
 | ------ | ----------- |
-| `stream.open(content_type)` | Opens the response stream for a provided HTTP content type. |
-| `stream.openPrint(content_type, fmt, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
+| `stream.open(&buffer, content_type)` | Opens the response stream for a provided HTTP content type. |
+| `stream.openPrint(&buffer, content_type, fmt, args)` | Opens the response stream for a provided HTTP content type and initial body payload. The user MUST format the payload with proper HTTP semantics (or use a Event Encoder). |
 | `stream.publish()` | Send the partial response buffer to the client. |
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
 

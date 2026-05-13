@@ -115,8 +115,8 @@ pub const Stream = struct {
     };
 
     /// Start streaming a response with the specified content type.
-    pub fn open(self: @This(), content_type: []const u8) !*std.Io.Writer {
-        return self.openPrint(content_type, "", {});
+    pub fn open(self: @This(), buffer: []u8, content_type: []const u8) !*std.Io.Writer {
+        return self.openPrint(buffer, content_type, "", {});
     }
 
     /// Start streaming a response with the specified HTTP content type and a
@@ -128,15 +128,16 @@ pub const Stream = struct {
     /// event encoder).
     pub fn openPrint(
         self: @This(),
+        buffer: []u8,
         content_type: []const u8,
         comptime prelude_fmt: []const u8,
         prelude_args: anytype,
     ) !*std.Io.Writer {
         if (self.state.* != .pending) return error.ReopeningStream;
-
         std.debug.assert(content_type.len > 0);
-        self.stream.* = try self.server.streamSuccess(content_type, prelude_fmt, prelude_args);
 
+        self.stream.* =
+            try self.server.streamSuccess(buffer, content_type, prelude_fmt, prelude_args);
         self.state.* = .active;
         return self.stream.writer();
     }

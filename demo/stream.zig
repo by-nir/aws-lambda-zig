@@ -13,8 +13,14 @@ const HALF_SEC = std.time.ns_per_s / 2;
 
 fn handler(ctx: lambda.Context, _: []const u8, stream: lambda.Stream) !void {
     // Start a textual event stream with an initial body.
-    // Use `stream.open("text/event-stream")` instead when no initial body is needed.
-    const writer = try stream.openPrint("text/event-stream", "Loading {d} messages...\n\n", .{3});
+    // Use `stream.open(&buffer, "text/event-stream")` instead when no initial body is needed.
+    const writer =
+        try stream.openPrint(
+            &.{},
+            "text/event-stream",
+            "Loading {d} messages...\n\n",
+            .{3},
+        );
 
     // Wait for half a second.
     try ctx.io.sleep(.fromMilliseconds(500), .awake);
