@@ -178,7 +178,8 @@ pub const Server = struct {
         const alloc = self.arena.allocator();
         const result =
             api.sendInvocationFail(alloc, &self.http, self.request_id, request) catch |e| {
-                return logErrorName("Sending the invocation’s error report failed: {s}", e);
+                log.err("Sending the invocation’s error report failed: {t}", .{e});
+                return e;
             };
 
         switch (result) {
@@ -196,7 +197,8 @@ pub const Server = struct {
         const arena = self.arena.allocator();
         const result =
             api.sendInvocationSuccess(arena, &self.http, self.request_id, output) catch |err| {
-                return logErrorName("Sending the invocation’s output failed: {s}", err);
+                log.err("Sending the invocation’s output failed: {t}", .{err});
+                return err;
             };
 
         switch (result) {
@@ -228,7 +230,8 @@ pub const Server = struct {
                 prelude_raw_http,
                 prelude_args,
             ) catch |err| {
-                return logErrorName("Opening a stream failed: {s}", err);
+                log.err("Opening a stream failed: {t}", .{err});
+                return err;
             };
 
         return .{
@@ -243,20 +246,27 @@ pub const Server = struct {
         body: std.http.BodyWriter,
         arena: std.mem.Allocator,
 
-        pub fn writer(self: *Stream) *std.Io.Writer {
+        pub fn writer(self: *@This()) *std.Io.Writer {
             return &self.body.writer;
         }
 
-        pub fn flush(self: *Stream) !void {
-            self.body.flush() catch |err| {
-                return logErrorName("Flushing the stream’s buffer failed: {s}", err);
+        pub fn flush(self: *@This()) !void {
+            self.flushWriter() catch |err| {
+                log.err("Flushing the stream’s buffer failed: {t}", .{err});
+                return err;
             };
         }
 
-        pub fn close(self: *Stream, err: ?api.ErrorRequest) !void {
+        pub fn close(self: *@This(), err: ?api.ErrorRequest) !void {
+            self.body.writer.flush() catch |e| {
+                log.err("Flushing the stream’s buffer failed: {t}", .{e});
+                return e;
+            };
+
             const result =
                 api.streamInvocationClose(self.arena, &self.req, &self.body, err) catch |e| {
-                    return logErrorName("Closing the stream failed: {s}", e);
+                    log.err("Flushing the stream’s buffer failed: {t}", .{e});
+                    return e;
                 };
 
             switch (result) {
@@ -269,10 +279,10 @@ pub const Server = struct {
                 },
             }
         }
+
+        fn flushWriter(self: *@This()) !void {
+            try self.body.writer.flush();
+            try self.body.flush();
+        }
     };
 };
-
-fn logErrorName(comptime format: []const u8, err: anyerror) anyerror {
-    log.err(format, .{@errorName(err)});
-    return err;
-}

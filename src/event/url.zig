@@ -160,13 +160,13 @@ test Response {
 /// ```
 pub fn openStream(
     ctx: hdl.Context,
-    buferr: []u8,
+    buffer: []u8,
     stream: hdl.Stream,
     response: Response,
 ) !*std.Io.Writer {
     // https://github.com/awslabs/aws-lambda-rust-runtime/blob/main/lambda-runtime/src/requests.rs
     // https://aws.amazon.com/blogs/compute/using-response-streaming-with-aws-lambda-web-adapter-to-optimize-performance
-    const writer = try stream.openPrint(buferr, INTEGRATION_CONTENT_TYPE, "{f}", .{
+    const writer = try stream.openPrint(buffer, INTEGRATION_CONTENT_TYPE, "{f}", .{
         StreamingResponse{
             .arena = ctx.arena,
             .response = response,
