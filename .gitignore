@@ -1,5 +1,7 @@
 /lambda.zip
 
+zig-pkg
 zig-out
 .zig-cache
+
 .DS_Store
