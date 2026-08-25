@@ -265,7 +265,7 @@ pub const Server = struct {
 
             const result =
                 api.streamInvocationClose(self.arena, &self.req, &self.body, err) catch |e| {
-                    log.err("Flushing the stream’s buffer failed: {t}", .{e});
+                    log.err("Closing the stream failed: {t}", .{e});
                     return e;
                 };
 

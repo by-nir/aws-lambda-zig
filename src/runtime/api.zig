@@ -155,7 +155,7 @@ pub fn sendInvocationFail(
     req_id: []const u8,
     err: ErrorRequest,
 ) Error!InvocationFailResult {
-    const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Fail");
+    const path = try requestPath(arena, URL_INVOC_FAIL, req_id, "Invocation Fail");
     const result = try sendError(arena, client, path, "Handler", err);
     return .init(arena, result);
 }
@@ -305,10 +305,35 @@ pub const InvocationEvent = struct {
     }
 
     /// Remaining time in **milliseconds** before the function execution aborts.
-    pub fn remaining(self: InvocationEvent) u64 {
-        return @as(u64, @intCast(std.time.milliTimestamp())) - self.deadline_timestamp;
+    /// Returns 0 once the deadline has passed.
+    pub fn remaining(self: InvocationEvent, io: std.Io) u64 {
+        const now_ms: u64 = @intCast(@max(0, std.Io.Clock.real.now(io).toMilliseconds()));
+        return self.deadline_ms -| now_ms;
     }
 };
+
+test "InvocationEvent.remaining" {
+    var threaded: std.Io.Threaded = .init(testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const now_ms: u64 = @intCast(std.Io.Clock.real.now(io).toMilliseconds());
+    var event: InvocationEvent = .{
+        .request_id = "",
+        .xray_trace = "",
+        .invoked_arn = "",
+        .deadline_ms = now_ms + std.time.ms_per_min,
+        .payload = "",
+    };
+
+    const left = event.remaining(io);
+    try testing.expect(left > 0);
+    try testing.expect(left <= std.time.ms_per_min);
+
+    // A deadline that already passed returns 0 instead of underflowing.
+    event.deadline_ms = now_ms - std.time.ms_per_min;
+    try testing.expectEqual(0, event.remaining(io));
+}
 
 const InitFailResult = union(enum) {
     accepted: StatusResponse,
