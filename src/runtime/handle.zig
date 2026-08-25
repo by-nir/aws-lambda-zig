@@ -9,6 +9,7 @@ pub const Context = @import("context.zig").Context;
 const AsyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror!void;
 const SyncHandlerFn = fn (ctx: Context, event: []const u8) anyerror![]const u8;
 const StreamingHandlerFn = fn (ctx: Context, event: []const u8, stream: Stream) anyerror!void;
+const WriterHandlerFn = fn (ctx: Context, event: []const u8, response: *ResponseWriter) anyerror!void;
 
 fn serve(proc_init: std.process.Init, options: Options, processorFn: srv.ProcessorFn) void {
     // Initialize the server.
@@ -36,6 +37,36 @@ pub fn handleSync(
                 server.respondSuccess(output) catch return .abort;
             } else |e| {
                 server.respondFailure(e, @errorReturnTrace()) catch return .abort;
+            }
+
+            return .success;
+        }
+    }.f);
+}
+
+/// The entry point for a synchronous AWS Lambda function that builds its
+/// response with a writer.
+/// Accepts a handler function that processes each event separately.
+pub fn handleWriter(
+    proc_init: std.process.Init,
+    comptime handlerFn: WriterHandlerFn,
+    options: Options,
+) void {
+    serve(proc_init, options, struct {
+        fn f(server: *Server, ctx: Context, event: []const u8) srv.InvocationResult {
+            var response = ResponseWriter.init(server, ctx.arena);
+
+            if (handlerFn(ctx, event, &response)) {
+                if (!response.isSent()) response.send() catch return .abort;
+            } else |err| {
+                if (response.isSent()) {
+                    log.err(
+                        "The handler returned an error after sending the response: {s}",
+                        .{@errorName(err)},
+                    );
+                } else {
+                    server.respondFailure(err, @errorReturnTrace()) catch return .abort;
+                }
             }
 
             return .success;
@@ -102,6 +133,46 @@ pub fn handleStreaming(
         }
     }.f);
 }
+
+pub const ResponseWriter = struct {
+    server: *Server,
+    buffer: std.Io.Writer.Allocating,
+    state: State = .pending,
+
+    const State = enum {
+        pending,
+        sent,
+    };
+
+    fn init(server: *Server, allocator: std.mem.Allocator) @This() {
+        return .{
+            .server = server,
+            .buffer = .init(allocator),
+        };
+    }
+
+    /// The writer that builds the response payload.
+    pub fn writer(self: *@This()) *std.Io.Writer {
+        return &self.buffer.writer;
+    }
+
+    /// **Optional**.
+    /// Send the response to the client while the handler proceeds to do other
+    /// work.
+    ///
+    /// The runtime sends the response on its own when the handler returns.
+    pub fn send(self: *@This()) !void {
+        if (self.state != .pending) return error.ResponseAlreadySent;
+
+        try self.server.respondSuccess(self.buffer.written());
+        self.state = .sent;
+    }
+
+    /// Whether the response was already sent to the client.
+    pub fn isSent(self: @This()) bool {
+        return self.state == .sent;
+    }
+};
 
 pub const Stream = struct {
     server: *Server,

@@ -1,11 +1,11 @@
-//! Returns a short message.
+//! Writes a short message with a response writer.
 const std = @import("std");
 const lambda = @import("aws-lambda");
 
 pub fn main(init: std.process.Init) void {
-    lambda.handle(init, handler, .{});
+    lambda.handleWriter(init, handler, .{});
 }
 
-fn handler(_: lambda.Context, _: []const u8) ![]const u8 {
-    return "Hello from the AWS Lambda Runtime for Zig!";
+fn handler(_: lambda.Context, _: []const u8, response: *lambda.ResponseWriter) !void {
+    try response.writer().writeAll("Hello from the AWS Lambda Runtime for Zig!");
 }

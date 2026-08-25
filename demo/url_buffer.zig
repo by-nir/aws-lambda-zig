@@ -11,6 +11,8 @@ const lambda = @import("aws-lambda");
 const html_type = "text/html; charset=utf-8";
 const global_nav = "<nav><a href=\"/\">← Homepage</a></nav>\n\n";
 
+// TODO: `{b64}` output string as standard base64
+
 pub fn main(init: std.process.Init) void {
     lambda.handle(init, handler, .{});
 }

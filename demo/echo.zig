@@ -1,4 +1,4 @@
-//! Returns the provided payload.
+//! Returns the provided payload as-is.
 const std = @import("std");
 const lambda = @import("aws-lambda");
 

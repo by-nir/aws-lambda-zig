@@ -195,6 +195,15 @@ The library provides a runtime that handles the event lifecycle and communicatio
 
 Since the library manages the lifecycle, it expects the handler to have a specific signature. _Note that [response streaming](#response-streaming) has a dedicated lifecycle and handler signature._
 
+The runtime provides four entry points, each with its own handler signature:
+
+| Entry point | The handler’s response | Use it when |
+| ----------- | ---------------------- | ----------- |
+| `lambda.handle` | Returns the payload. | The payload is a single slice. |
+| `lambda.handleWriter` | Writes the payload into a [response writer](#response-writer). | The payload is built in parts. |
+| `lambda.handleAsync` | No payload. | The client does not expect a response. |
+| `lambda.handleStream` | Writes the payload into a [stream](#response-streaming). | The client should get the response while it is still built. |
+
 ```zig
 const std = @import("std");
 const lambda = @import("aws-lambda");
@@ -204,6 +213,9 @@ const lambda = @import("aws-lambda");
 pub fn main(init: std.process.Init) void {
     // Bind the handler to the runtime:
     lambda.handle(init, handlerSync, .{});
+
+    // Alternatively, to build the response with a writer:
+    lambda.handleWriter(init, handlerWriter, .{});
 
     // Alternatively, for asynchronous handlers:
     lambda.handleAsync(init, handlerAsync, .{});
@@ -220,6 +232,17 @@ fn handlerSync(
     };
 }
 
+fn handlerWriter(
+    ctx: lambda.Context,                // Metadata and utilities
+    event: []const u8,                  // Raw event payload (JSON)
+    response: *lambda.ResponseWriter,   // Response delegate
+) !void {
+    // Process the `event` payload and build a response payload in parts.
+    const w = response.writer();
+    try w.writeAll("Received a payload of ");
+    try w.print("{d} bytes.", .{event.len});
+}
+
 fn handlerAsync(
     ctx: lambda.Context,    // Metadata and utilities
     event: []const u8,      // Raw event payload (JSON)
@@ -227,6 +250,18 @@ fn handlerAsync(
     // Process the `event` payload...
 }
 ```
+
+#### Response Writer
+Instead of returning the payload from the handler, a writer handler builds it with the _response writer_.
+
+The runtime sends the payload to the client after the handler returns.
+Sending it earlier is optional; after calling `response.send()` the handler may keep working.
+
+| Method | Description |
+| ------ | ----------- |
+| `response.writer()` | The `std.Io.Writer` that builds the response payload. |
+| `response.send()` | Optionally send the response to the client while continuing to process the event. |
+| `response.isSent()` | Whether the response was already sent to the client. |
 
 #### Errors & Logging
 When a handler returns an error, the runtime will log it to _CloudWatch_ and return an error response to the client.
@@ -380,7 +415,7 @@ _Closing the stream is optional._
 ## Demos
 
 ### Hello World
-Returns a short message.
+Writes a short message with a [response writer](#response-writer).
 
 ```console
 zig build demo:hello --release -Darch=ARCH_OPTION
