@@ -27,4 +27,7 @@ test {
     _ = @import("runtime/handle.zig");
 
     _ = @import("event/url.zig");
+
+    _ = @import("debug/Tester.zig");
+    _ = @import("debug/runtime_test.zig");
 }

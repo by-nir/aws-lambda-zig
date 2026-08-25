@@ -5,7 +5,11 @@ const HttpClient = @import("../utils/Http.zig");
 const log = @import("../utils/log.zig").runtime;
 
 pub const ProcessorFn =
-    *const fn (server: *Server, ctx: ctx.Context, event: []const u8) InvocationResult;
+    *const fn (
+        server: *Server,
+        ctx: ctx.Context,
+        event: []const u8,
+    ) InvocationResult;
 
 pub const InvocationResult = enum {
     /// The runtime may process another event.
@@ -63,7 +67,8 @@ pub const Server = struct {
         self.io = self.threaded.io();
 
         HttpClient.init(&self.http, self.gpa, api_origin, self.io) catch |err| {
-            return initFailed(self.arena.allocator(), null, err, "Creating a HTTP client failed");
+            const msg = "Creating a HTTP client failed";
+            return initFailed(self.arena.allocator(), null, err, msg);
         };
     }
 
@@ -159,15 +164,23 @@ pub const Server = struct {
         }
     }
 
-    pub fn respondFailure(self: *@This(), err: anyerror, trace: ?*std.builtin.StackTrace) !void {
+    pub fn respondFailure(
+        self: *@This(),
+        err: anyerror,
+        trace: ?*std.builtin.StackTrace,
+    ) !void {
         log.err("The handler returned an error `{s}`.", .{@errorName(err)});
 
-        if (trace) |st| {
-            var buffer: [64]u8 = undefined;
-            const stderr = std.debug.lockStderr(&buffer).terminal();
-            defer std.debug.unlockStderr();
+        // The test build drives the error paths on purpose, so it skips the
+        // trace dump; it would only garble the test output.
+        if (!@import("builtin").is_test) {
+            if (trace) |st| {
+                var buffer: [64]u8 = undefined;
+                const stderr = std.debug.lockStderr(&buffer).terminal();
+                defer std.debug.unlockStderr();
 
-            try std.debug.writeErrorReturnTrace(st, stderr);
+                try std.debug.writeErrorReturnTrace(st, stderr);
+            }
         }
 
         const request = api.ErrorRequest{
@@ -177,7 +190,12 @@ pub const Server = struct {
 
         const alloc = self.arena.allocator();
         const result =
-            api.sendInvocationFail(alloc, &self.http, self.request_id, request) catch |e| {
+            api.sendInvocationFail(
+                alloc,
+                &self.http,
+                self.request_id,
+                request,
+            ) catch |e| {
                 log.err("Sending the invocation’s error report failed: {t}", .{e});
                 return e;
             };
@@ -196,7 +214,12 @@ pub const Server = struct {
     pub fn respondSuccess(self: *@This(), output: []const u8) !void {
         const arena = self.arena.allocator();
         const result =
-            api.sendInvocationSuccess(arena, &self.http, self.request_id, output) catch |err| {
+            api.sendInvocationSuccess(
+                arena,
+                &self.http,
+                self.request_id,
+                output,
+            ) catch |err| {
                 log.err("Sending the invocation’s output failed: {t}", .{err});
                 return err;
             };
@@ -273,9 +296,9 @@ pub const Server = struct {
                 .accepted => {},
                 .bad_request, .forbidden, .payload_too_large => |e| {
                     log.err(
-                        "Closing the stream failed: {s}.\n{s}",
-                        .{ e.type, e.message },
-                    );
+                        \\Closing the stream failed: {s}.
+                        \\{s}
+                    , .{ e.type, e.message });
                 },
             }
         }
