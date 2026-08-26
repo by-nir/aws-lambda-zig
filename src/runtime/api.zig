@@ -124,12 +124,10 @@ pub fn streamInvocationClose(
             log.err("[Send Error] Formatting error body failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
-        const size = std.base64.standard.Encoder.calcSize(value.len);
-        const value_encoded = arena.alloc(u8, size) catch |e| {
+        const value_encoded = std.fmt.allocPrint(arena, "{b64}", .{value}) catch |e| {
             log.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
-        _ = std.base64.standard.Encoder.encode(value_encoded, value);
 
         headers = .{
             .{ .name = ERROR_HEAD_TYPE, .value = err_type },

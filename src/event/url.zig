@@ -95,9 +95,7 @@ pub fn encodeResponse(gpa: Allocator, res: Response) ![]const u8 {
         },
         .binary => |s| if (s.len > 0) {
             try buffer.writer.writeAll(",\"isBase64Encoded\":true");
-            try buffer.writer.writeAll(",\"body\":\"");
-            try std.base64.standard.Encoder.encodeWriter(&buffer.writer, s);
-            try buffer.writer.writeByte('"');
+            try buffer.writer.print(",\"body\":\"{b64}\"", .{s});
         },
     }
 

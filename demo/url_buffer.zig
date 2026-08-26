@@ -11,8 +11,6 @@ const lambda = @import("aws-lambda");
 const html_type = "text/html; charset=utf-8";
 const global_nav = "<nav><a href=\"/\">← Homepage</a></nav>\n\n";
 
-// TODO: `{b64}` output string as standard base64
-
 pub fn main(init: std.process.Init) void {
     lambda.handle(init, handler, .{});
 }
@@ -168,9 +166,10 @@ fn storagePage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
         // Encode the cookie value
         var new_cookie: std.Io.Writer.Allocating = .init(ctx.arena);
         errdefer new_cookie.deinit();
-        try new_cookie.writer.writeAll("store=");
-        try std.base64.standard.Encoder.encodeWriter(&new_cookie.writer, value);
-        try new_cookie.writer.writeAll("; Path=/cookiejar; Max-Age=432000; HttpOnly; Secure; SameSite=Lax");
+        try new_cookie.writer.print(
+            "store={b64}; Path=/cookiejar; Max-Age=432000; HttpOnly; Secure; SameSite=Lax",
+            .{value},
+        );
         set_cookies = &.{try new_cookie.toOwnedSlice()};
     }
 
