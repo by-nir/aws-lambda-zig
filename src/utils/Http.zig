@@ -91,8 +91,8 @@ pub fn sendUri(
         try req.sendBodiless();
     }
 
-    const redirect_buffer: [0]u8 = undefined;
-    var res = try req.receiveHead(&redirect_buffer);
+    // The runtime does not follow redirects, so no buffer is needed.
+    var res = try req.receiveHead(&.{});
     return parseResponse(arena, &res);
 }
 
