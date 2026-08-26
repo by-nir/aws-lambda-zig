@@ -27,7 +27,7 @@ pub const Server = struct {
     io: std.Io,
     http: HttpClient,
     env: *std.process.Environ.Map,
-    request_id: []const u8 = "",
+    invocation: api.Invocation = .{},
 
     pub fn init(self: *@This(), proc_init: std.process.Init, _: Options) !void {
         errdefer self.* = undefined;
@@ -143,7 +143,10 @@ pub const Server = struct {
 
                 // Update event-specific metadata
                 .success => |event| {
-                    self.request_id = event.request_id;
+                    self.invocation = .{
+                        .request_id = event.request_id,
+                        .id = event.invocation_id,
+                    };
                     ctx.updateMeta(&context, event);
 
                     // Process the event
@@ -193,7 +196,7 @@ pub const Server = struct {
             api.sendInvocationFail(
                 alloc,
                 &self.http,
-                self.request_id,
+                self.invocation,
                 request,
             ) catch |e| {
                 log.err("Sending the invocation’s error report failed: {t}", .{e});
@@ -217,7 +220,7 @@ pub const Server = struct {
             api.sendInvocationSuccess(
                 arena,
                 &self.http,
-                self.request_id,
+                self.invocation,
                 output,
             ) catch |err| {
                 log.err("Sending the invocation’s output failed: {t}", .{err});
@@ -248,7 +251,7 @@ pub const Server = struct {
                 arena,
                 &self.http,
                 buffer,
-                self.request_id,
+                self.invocation,
                 content_type,
                 prelude_raw_http,
                 prelude_args,

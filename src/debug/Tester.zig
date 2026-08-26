@@ -44,6 +44,10 @@ pub const Event = struct {
     /// The event’s raw payload.
     payload: []const u8 = "{}",
 
+    /// The attempt’s invocation ID. An empty value serves no header at all,
+    /// the way Lambda behaved before the header existed.
+    invocation_id: []const u8 = "test-invocation",
+
     /// X-Ray trace ID.
     xray_trace: []const u8 = "test-trace",
 
@@ -327,15 +331,23 @@ fn serveNext(self: *@This(), request: *std.http.Server.Request) !void {
     var deadline_buffer: [24]u8 = undefined;
     const deadline = try std.fmt.bufPrint(&deadline_buffer, "{d}", .{event.deadline_ms});
 
+    var headers: [5]std.http.Header = .{
+        .{ .name = "Lambda-Runtime-Aws-Request-Id", .value = event.request_id },
+        .{ .name = "Lambda-Runtime-Trace-Id", .value = event.xray_trace },
+        .{ .name = "Lambda-Runtime-Invoked-Function-Arn", .value = event.invoked_arn },
+        .{ .name = "Lambda-Runtime-Deadline-Ms", .value = deadline },
+        undefined,
+    };
+    var head_count: usize = 4;
+    if (event.invocation_id.len > 0) {
+        headers[4] = .{ .name = "Lambda-Runtime-Invocation-Id", .value = event.invocation_id };
+        head_count = 5;
+    }
+
     return request.respond(event.payload, .{
         .status = .ok,
         .keep_alive = false,
-        .extra_headers = &.{
-            .{ .name = "Lambda-Runtime-Aws-Request-Id", .value = event.request_id },
-            .{ .name = "Lambda-Runtime-Trace-Id", .value = event.xray_trace },
-            .{ .name = "Lambda-Runtime-Invoked-Function-Arn", .value = event.invoked_arn },
-            .{ .name = "Lambda-Runtime-Deadline-Ms", .value = deadline },
-        },
+        .extra_headers = headers[0..head_count],
     });
 }
 

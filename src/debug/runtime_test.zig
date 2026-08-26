@@ -10,6 +10,7 @@ const hdl = @import("../runtime/handle.zig");
 const HttpClient = @import("../utils/Http.zig");
 
 const URL_BASE = "/2018-06-01/runtime/";
+const HEAD_INVOCATION_ID = "Lambda-Runtime-Invocation-Id";
 
 var keep_len: usize = 0;
 /// Anything the handler sees is backed by the invocation arena, which the
@@ -229,6 +230,64 @@ test "handle: a container error while reporting an error ends the loop" {
     try tester.expectPath(0, URL_BASE ++ "invocation/id-1/error");
 }
 
+test "handle: each attempt echoes its own invocation id" {
+    resetSeen();
+
+    var tester: Tester = undefined;
+    // One request id may be attempted more than once. Each attempt carries its
+    // own invocation id, and the API rejects a wrong one.
+    try tester.init(testing.allocator, &.{
+        .{ .request_id = "id-1", .invocation_id = "attempt-1" },
+        .{ .request_id = "id-1", .invocation_id = "attempt-2" },
+    });
+    defer tester.deinit();
+
+    hdl.handleSync(tester.processInit(), echoHandler, .{});
+
+    try tester.expectPostCount(2);
+    try testing.expectEqualStrings(
+        "attempt-1",
+        (try tester.post(0)).header(HEAD_INVOCATION_ID).?,
+    );
+    try testing.expectEqualStrings(
+        "attempt-2",
+        (try tester.post(1)).header(HEAD_INVOCATION_ID).?,
+    );
+}
+
+test "handle: an error report echoes the invocation id" {
+    var tester: Tester = undefined;
+    try tester.init(testing.allocator, &.{
+        .{ .request_id = "id-bad", .invocation_id = "attempt-1" },
+    });
+    defer tester.deinit();
+
+    hdl.handleSync(tester.processInit(), failingHandler, .{});
+
+    try tester.expectPath(0, URL_BASE ++ "invocation/id-bad/error");
+
+    const post = try tester.post(0);
+    try testing.expectEqualStrings("attempt-1", post.header(HEAD_INVOCATION_ID).?);
+    try testing.expectEqualStrings(
+        "Handler.KaBoOoOm",
+        post.header("Lambda-Runtime-Function-Error-Type").?,
+    );
+}
+
+test "handle: sends no invocation id when the API serves none" {
+    var tester: Tester = undefined;
+    try tester.init(testing.allocator, &.{
+        .{ .request_id = "id-1", .invocation_id = "" },
+    });
+    defer tester.deinit();
+
+    hdl.handleSync(tester.processInit(), echoHandler, .{});
+
+    // An unknown id must not become an empty header: Lambda rejects a header
+    // that does not match the invocation.
+    try testing.expectEqual(null, (try tester.post(0)).header(HEAD_INVOCATION_ID));
+}
+
 test "handle: serves the events in order" {
     resetSeen();
 
@@ -348,6 +407,7 @@ test "handleStream: streams a chunked response" {
         post.header("Lambda-Runtime-Function-Response-Mode").?,
     );
     try testing.expectEqualStrings("text/plain", post.header("content-type").?);
+    try testing.expectEqualStrings("test-invocation", post.header(HEAD_INVOCATION_ID).?);
     try testing.expectEqualStrings("first\nsecond\nthird\n", post.body);
 
     // Closing without an error sends no trailers.
@@ -441,7 +501,7 @@ test "api: closing a stream with an error sends trailers" {
         arena.allocator(),
         &client,
         &buffer,
-        "id-trailer",
+        .{ .request_id = "id-trailer", .id = "attempt-1" },
         "text/plain",
         "",
         {},

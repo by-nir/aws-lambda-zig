@@ -14,6 +14,8 @@ const URL_INVOC_SUCCESS: []const u8 = URL_BASE ++ "invocation/{s}/response";
 const URL_INVOC_FAIL: []const u8 = URL_BASE ++ "invocation/{s}/error";
 const URL_ERROR = "[{s}] Interpreting URL failed: {s}";
 
+const HEAD_INVOCATION_ID = "Lambda-Runtime-Invocation-Id";
+
 const ERROR_HEAD_TYPE = "Lambda-Runtime-Function-Error-Type";
 const ERROR_HEAD_BODY = "Lambda-Runtime-Function-Error-Body";
 const ERROR_CONTENT_TYPE = "application/vnd.aws.lambda.error+json";
@@ -22,6 +24,32 @@ const STREAM_HEAD_NAME = "Lambda-Runtime-Function-Response-Mode";
 const STREAM_HEAD_VAL = "streaming";
 
 pub const Error = error{ ParseError, ClientError, ContainerError, UnknownStatus } || Allocator.Error;
+
+/// Identifies the invocation the runtime answers.
+pub const Invocation = struct {
+    /// The event’s request ID. It is part of the URL the result is posted to.
+    request_id: []const u8 = "",
+
+    /// The attempt’s invocation ID. A single request ID may be attempted more
+    /// than once, and each attempt carries its own invocation ID.
+    id: []const u8 = "",
+
+    /// The header that echoes the invocation ID back to the API.
+    ///
+    /// Lambda accepts a request without it, for runtimes written before the
+    /// header existed. It rejects a header that does not match the invocation,
+    /// so an unknown ID sends nothing at all.
+    fn echoHeader(self: Invocation) ?Client.Header {
+        if (self.id.len == 0) return null;
+        return .{ .name = HEAD_INVOCATION_ID, .value = self.id };
+    }
+
+    /// Fills `buffer` with the headers to send alongside a result.
+    fn echoHeaders(self: Invocation, buffer: *[1]Client.Header) []const Client.Header {
+        buffer[0] = self.echoHeader() orelse return &.{};
+        return buffer;
+    }
+};
 
 pub const ErrorRequest = struct {
     type: anyerror,
@@ -52,14 +80,14 @@ pub const ErrorResponse = struct {
 /// Non-recoverable initialization error. The runtime should exit after
 /// reporting the error. The error is served in response to the first invoke.
 pub fn sendInitFail(arena: Allocator, client: *Client, err: ErrorRequest) Error!InitFailResult {
-    const result = try sendError(arena, client, URL_INIT_FAIL, "Runtime", err);
+    const result = try sendError(arena, client, URL_INIT_FAIL, "Runtime", err, .{});
     return .init(arena, result);
 }
 
 /// This is an iterator-style blocking API call. Runtime makes this request when
 /// it is ready to process a new invoke.
 pub fn sendInvocationNext(arena: Allocator, client: *Client) Error!InvocationNextResult {
-    var result = try sendRequest(arena, client, URL_INVOC_NEXT, null);
+    var result = try sendRequest(arena, client, URL_INVOC_NEXT, null, &.{});
     return .init(arena, &result);
 }
 
@@ -67,11 +95,15 @@ pub fn sendInvocationNext(arena: Allocator, client: *Client) Error!InvocationNex
 pub fn sendInvocationSuccess(
     arena: Allocator,
     client: *Client,
-    req_id: []const u8,
+    invocation: Invocation,
     payload: []const u8,
 ) Error!InvocationSuccessResult {
-    const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Success");
-    var result = try sendRequest(arena, client, path, payload);
+    const path =
+        try requestPath(arena, URL_INVOC_SUCCESS, invocation.request_id, "Invocation Success");
+
+    var head_buffer: [1]Client.Header = undefined;
+    var result =
+        try sendRequest(arena, client, path, payload, invocation.echoHeaders(&head_buffer));
     return .init(arena, &result);
 }
 
@@ -80,22 +112,32 @@ pub fn streamInvocationOpen(
     arena: Allocator,
     client: *Client,
     buffer: []u8,
-    req_id: []const u8,
+    invocation: Invocation,
     content_type: []const u8,
     comptime prelude_raw_http: []const u8,
     prelude_args: anytype,
 ) Error!struct { Client.Request, Client.BodyWriter } {
-    const path = try requestPath(arena, URL_INVOC_SUCCESS, req_id, "Invocation Success");
+    const path =
+        try requestPath(arena, URL_INVOC_SUCCESS, invocation.request_id, "Invocation Success");
+
+    var headers: [3]Client.Header = .{
+        .{ .name = STREAM_HEAD_NAME, .value = STREAM_HEAD_VAL },
+        .{ .name = "Trailer", .value = ERROR_HEAD_TYPE ++ "," ++ ERROR_HEAD_BODY },
+        undefined,
+    };
+    var head_count: usize = 2;
+    if (invocation.echoHeader()) |head| {
+        headers[2] = head;
+        head_count = 3;
+    }
+
     return client.openStream(path, .{
         .request = .{
             .authorization = .omit,
             .accept_encoding = .omit,
             .content_type = .{ .override = content_type },
         },
-        .headers = &[_]Client.Header{
-            .{ .name = STREAM_HEAD_NAME, .value = STREAM_HEAD_VAL },
-            .{ .name = "Trailer", .value = ERROR_HEAD_TYPE ++ "," ++ ERROR_HEAD_BODY },
-        },
+        .headers = headers[0..head_count],
     }, buffer, prelude_raw_http, prelude_args) catch |e| {
         log.err("[Stream Request] Client failed opening: {s}, Path: {s}", .{
             @errorName(e), path,
@@ -150,11 +192,11 @@ pub fn streamInvocationClose(
 pub fn sendInvocationFail(
     arena: Allocator,
     client: *Client,
-    req_id: []const u8,
+    invocation: Invocation,
     err: ErrorRequest,
 ) Error!InvocationFailResult {
-    const path = try requestPath(arena, URL_INVOC_FAIL, req_id, "Invocation Fail");
-    const result = try sendError(arena, client, path, "Handler", err);
+    const path = try requestPath(arena, URL_INVOC_FAIL, invocation.request_id, "Invocation Fail");
+    const result = try sendError(arena, client, path, "Handler", err, invocation);
     return .init(arena, result);
 }
 
@@ -176,6 +218,7 @@ fn sendError(
     path: []const u8,
     err_category: []const u8,
     err: ErrorRequest,
+    invocation: Invocation,
 ) !Client.Result {
     // The Runtime API asks for a `<category>.<reason>` error type, the same
     // form the payload’s `errorType` uses.
@@ -187,10 +230,15 @@ fn sendError(
         return error.ClientError;
     };
 
-    const head = Client.Header{
-        .name = ERROR_HEAD_TYPE,
-        .value = error_type,
+    var headers: [2]Client.Header = .{
+        .{ .name = ERROR_HEAD_TYPE, .value = error_type },
+        undefined,
     };
+    var head_count: usize = 1;
+    if (invocation.echoHeader()) |head| {
+        headers[1] = head;
+        head_count = 2;
+    }
 
     const payload = formatError(arena, err_category, err) catch |e| {
         log.err("[Send Error] Formatting error failed: {s}", .{@errorName(e)});
@@ -198,7 +246,7 @@ fn sendError(
     };
 
     return client.send(arena, path, payload, .{
-        .headers = &.{head},
+        .headers = headers[0..head_count],
         .request = .{
             .authorization = .omit,
             .accept_encoding = .omit,
@@ -210,8 +258,14 @@ fn sendError(
     };
 }
 
-fn sendRequest(arena: Allocator, client: *Client, path: []const u8, payload: ?[]const u8) !Client.Result {
-    return client.send(arena, path, payload, .{}) catch |e| {
+fn sendRequest(
+    arena: Allocator,
+    client: *Client,
+    path: []const u8,
+    payload: ?[]const u8,
+    headers: []const Client.Header,
+) !Client.Result {
+    return client.send(arena, path, payload, .{ .headers = headers }) catch |e| {
         log.err("[Send Request] Client failed: {s}, Path: {s}", .{ @errorName(e), path });
         return error.ClientError;
     };
@@ -269,6 +323,9 @@ pub const InvocationEvent = struct {
     /// AWS request ID associated with the request.
     request_id: []const u8,
 
+    /// The attempt’s invocation ID, echoed back when the result is posted.
+    invocation_id: []const u8 = &[_]u8{},
+
     /// X-Ray trace ID.
     xray_trace: []const u8,
 
@@ -297,6 +354,8 @@ pub const InvocationEvent = struct {
         while (result.headers.next()) |header| {
             if (mem.eql(u8, "Lambda-Runtime-Aws-Request-Id", header.name))
                 event.request_id = try arena.dupe(u8, header.value)
+            else if (mem.eql(u8, HEAD_INVOCATION_ID, header.name))
+                event.invocation_id = try arena.dupe(u8, header.value)
             else if (mem.eql(u8, "Lambda-Runtime-Trace-Id", header.name))
                 event.xray_trace = try arena.dupe(u8, header.value)
             else if (mem.eql(u8, "Lambda-Runtime-Invoked-Function-Arn", header.name))
