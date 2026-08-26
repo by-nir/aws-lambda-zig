@@ -37,6 +37,7 @@ Minimal [Hello World](#hello-world) demo:
 - [x] CloudWatch & X-Ray integration
 - [ ] Lifecycle hooks
 - [x] Build system target configuration
+- [x] Build system zip packaging
 - [ ] Testing utilities
 
 ### Service Events
@@ -63,7 +64,8 @@ _Feel free to open an issue for additional integrations, or better yet, open a p
     zig build --release -Darch=x86
     zig build --release -Darch=arm
     ```
-5. Archive the executable into a zip:
+5. Archive the executable into a zip. Add a [package step](#packaging) to the
+   build script, or archive it by hand:
     ```console
     zip -qj lambda.zip zig-out/bin/bootstrap
     ```
@@ -185,8 +187,31 @@ pub fn build(b: *std.Build) void {
         .root_module = mod
     });
     b.installArtifact(exe);
+
+    // Pack the executable into `zig-out/lambda.zip`, ready to deploy.
+    const archive = lambda.addPackageStep(b, exe);
+    b.getInstallStep().dependOn(&b.addInstallFile(archive, "lambda.zip").step);
 }
 ```
+
+#### Packaging
+AWS Lambda deploys a zip archive that has a single executable named _bootstrap_.
+
+`lambda.addPackageStep(*std.Build, *std.Build.Step.Compile)` builds that archive. It returns the archive’s path inside the build cache, so the build script can install it or pass it to another step:
+
+```zig
+// Compile an executable.
+const exe = b.addExecutable(.{
+    .name = "bootstrap", // The executable name must be "bootstrap"!
+    .root_module = mod,
+});
+
+// Pack it into `zig-out/lambda.zip`, ready to deploy.
+const archive = lambda.addPackageStep(b, exe);
+b.getInstallStep().dependOn(&b.addInstallFile(archive, "lambda.zip").step);
+```
+
+The archive has a fixed timestamp, so the same executable always produces the same bytes. The build system caches it by the executable’s content and only repacks when the executable changes.
 
 ### Event Handler
 The event handler is the entry point for the Lambda function.
@@ -413,6 +438,7 @@ _Closing the stream is optional._
 | `stream.close()` | Optionally conclude the response stream while continuing to process the event. |
 
 ## Demos
+Each demo installs both `zig-out/bin/bootstrap` and `zig-out/lambda.zip`.
 
 ### Hello World
 Writes a short message with a [response writer](#response-writer).
