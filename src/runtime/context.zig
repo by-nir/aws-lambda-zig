@@ -2,6 +2,10 @@ const std = @import("std");
 const api = @import("api.zig");
 const rt_meta = @import("api-metadata.zig");
 const HttpClient = @import("../utils/Http.zig");
+const log = @import("../utils/log.zig").runtime;
+
+/// AWS libraries read the invocation’s trace from this environment value.
+const ENV_XRAY_TRACE = "_X_AMZN_TRACE_ID";
 
 const DEFAULT_MEMORY_MB: u16 = 128;
 const DEFAULT_REGION: []const u8 = "us-east-1";
@@ -10,7 +14,7 @@ const DEFAULT_INIT_TYPE = Context.ConfigMeta.InitType.on_demand;
 pub const Internal = struct {
     client: *HttpClient,
     force_destroy: *bool,
-    kv: *const std.process.Environ.Map = undefined,
+    kv: *std.process.Environ.Map = undefined,
 };
 
 pub const Context = struct {
@@ -125,7 +129,7 @@ pub const Context = struct {
 
 /// Returns the URL (host and port) of the Runtime API.
 /// https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html
-pub fn loadMeta(ctx: *Context, env: *const std.process.Environ.Map) void {
+pub fn loadMeta(ctx: *Context, env: *std.process.Environ.Map) void {
     const cfg = &ctx.config;
 
     ctx._.kv = env;
@@ -158,7 +162,7 @@ pub fn loadMeta(ctx: *Context, env: *const std.process.Environ.Map) void {
     if (env.get("AWS_LAMBDA_FUNCTION_VERSION")) |v| cfg.func_version = v;
     if (env.get("AWS_LAMBDA_LOG_GROUP_NAME")) |v| cfg.log_group = v;
     if (env.get("AWS_LAMBDA_LOG_STREAM_NAME")) |v| cfg.log_stream = v;
-    if (env.get("_X_AMZN_TRACE_ID")) |v| ctx.request.xray_trace = v;
+    if (env.get(ENV_XRAY_TRACE)) |v| ctx.request.xray_trace = v;
     if (env.get("AWS_SESSION_TOKEN")) |v| cfg.aws_session_token = v;
     if (env.get("AWS_SECRET_ACCESS_KEY")) |v| cfg.aws_access_secret = v;
 }
@@ -171,4 +175,15 @@ pub fn updateMeta(ctx: *Context, event: api.InvocationEvent) void {
     ctx.request.deadline_ms = event.deadline_ms;
     ctx.request.client_context = event.client_context;
     ctx.request.cognito_identity = event.cognito_identity;
+
+    // Every Lambda runtime refreshes the trace environment value for each
+    // invocation, and AWS libraries read the trace from there. Without this,
+    // `ctx.env` would hand out the trace of an earlier invocation.
+    //
+    // This only updates the runtime’s own copy of the environment. Zig has no
+    // portable way to change the operating system’s copy, so a library that
+    // calls `getenv` still sees the value the function started with.
+    ctx._.kv.put(ENV_XRAY_TRACE, event.xray_trace) catch |err| {
+        log.err("Updating the trace environment value failed: {t}", .{err});
+    };
 }

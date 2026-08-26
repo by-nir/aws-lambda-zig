@@ -301,6 +301,34 @@ fn metaHandler(ctx: hdl.Context, event: []const u8) ![]const u8 {
     return "";
 }
 
+test "handle: the trace environment value follows each invocation" {
+    resetSeen();
+
+    var tester: Tester = undefined;
+    try tester.init(testing.allocator, &.{
+        .{ .request_id = "id-1", .xray_trace = "trace-one" },
+        .{ .request_id = "id-2", .xray_trace = "trace-two" },
+    });
+    defer tester.deinit();
+
+    hdl.handleSync(tester.processInit(), traceHandler, .{});
+
+    try testing.expectEqual(2, seen.events);
+    try tester.expectPostCount(2);
+    try tester.expectBody(0, "trace-one");
+    try tester.expectBody(1, "trace-two");
+}
+
+fn traceHandler(ctx: hdl.Context, _: []const u8) ![]const u8 {
+    seen.events += 1;
+
+    // The environment value must carry this invocation’s trace, not the one
+    // before it.
+    const from_env = ctx.env("_X_AMZN_TRACE_ID") orelse return error.MissingTrace;
+    try testing.expectEqualStrings(ctx.request.xray_trace, from_env);
+    return from_env;
+}
+
 test "handleStream: streams a chunked response" {
     var tester: Tester = undefined;
     try tester.init(testing.allocator, &.{

@@ -26,7 +26,7 @@ pub const Server = struct {
     threaded: std.Io.Threaded,
     io: std.Io,
     http: HttpClient,
-    env: *const std.process.Environ.Map,
+    env: *std.process.Environ.Map,
     request_id: []const u8 = "",
 
     pub fn init(self: *@This(), proc_init: std.process.Init, _: Options) !void {

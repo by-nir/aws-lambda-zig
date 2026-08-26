@@ -336,6 +336,18 @@ Per-invocation metadata is provided by the _handler context_ `ctx.request` field
 | `client_context` | `[]const u8` | Information about the client application and device when invoked through the AWS Mobile SDK. |
 | `cognito_identity` | `[]const u8` | Information about the Amazon Cognito identity provider when invoked through the AWS Mobile SDK. |
 
+#### X-Ray Trace
+AWS libraries read the current invocation’s trace from the `_X_AMZN_TRACE_ID` environment value. The runtime refreshes it before each invocation, so it always matches `ctx.request.xray_trace`:
+
+```zig
+const trace = ctx.env("_X_AMZN_TRACE_ID");
+```
+
+> [!NOTE]
+> The runtime refreshes its own copy of the environment, not the operating system’s.
+> A library that calls the C `getenv` still reads the value the function started with.
+> Zig has no portable way to set an environment value without linking _libc_.
+
 #### Configuration Metadata
 Static config metadata is provided by the _handler context_ `ctx.config` field. It contains the following fields:
 
