@@ -177,9 +177,19 @@ fn sendError(
     err_category: []const u8,
     err: ErrorRequest,
 ) !Client.Result {
+    // The Runtime API asks for a `<category>.<reason>` error type, the same
+    // form the payload’s `errorType` uses.
+    const error_type = std.fmt.allocPrint(arena, "{s}.{s}", .{
+        err_category,
+        @errorName(err.type),
+    }) catch |e| {
+        log.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
+        return error.ClientError;
+    };
+
     const head = Client.Header{
         .name = ERROR_HEAD_TYPE,
-        .value = @errorName(err.type),
+        .value = error_type,
     };
 
     const payload = formatError(arena, err_category, err) catch |e| {

@@ -131,7 +131,7 @@ test "handle: a handler error is posted to the error URL" {
 
     const post = try tester.post(0);
     try testing.expectEqualStrings(
-        "KaBoOoOm",
+        "Handler.KaBoOoOm",
         post.header("Lambda-Runtime-Function-Error-Type").?,
     );
     try testing.expect(std.mem.containsAtLeast(u8, post.body, 1, "Handler.KaBoOoOm"));
@@ -410,7 +410,7 @@ test "api: an init error is posted to the init error URL" {
 
     const post = try tester.post(0);
     try testing.expectEqualStrings(
-        "BadHandlerName",
+        "Runtime.BadHandlerName",
         post.header("Lambda-Runtime-Function-Error-Type").?,
     );
     try testing.expect(std.mem.containsAtLeast(u8, post.body, 1, "Runtime.BadHandlerName"));
