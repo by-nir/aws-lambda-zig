@@ -193,6 +193,42 @@ test "handle: a container error from the API ends the event loop" {
     try tester.expectPostCount(0);
 }
 
+test "handle: a container error while posting a response ends the loop" {
+    resetSeen();
+
+    var tester: Tester = undefined;
+    try tester.init(testing.allocator, &.{
+        .{ .request_id = "id-1", .reply_status = .internal_server_error },
+        .{ .request_id = "id-2" },
+    });
+    defer tester.deinit();
+
+    hdl.handleSync(tester.processInit(), echoHandler, .{});
+
+    // HTTP 500 means the container is done. The runtime stops instead of
+    // asking for the second event.
+    try testing.expectEqual(1, seen.events);
+    try tester.expectPostCount(1);
+    try tester.expectPath(0, URL_BASE ++ "invocation/id-1/response");
+}
+
+test "handle: a container error while reporting an error ends the loop" {
+    resetSeen();
+
+    var tester: Tester = undefined;
+    try tester.init(testing.allocator, &.{
+        .{ .request_id = "id-1", .reply_status = .internal_server_error },
+        .{ .request_id = "id-2" },
+    });
+    defer tester.deinit();
+
+    hdl.handleSync(tester.processInit(), failingHandler, .{});
+
+    try testing.expectEqual(0, seen.events);
+    try tester.expectPostCount(1);
+    try tester.expectPath(0, URL_BASE ++ "invocation/id-1/error");
+}
+
 test "handle: serves the events in order" {
     resetSeen();
 
