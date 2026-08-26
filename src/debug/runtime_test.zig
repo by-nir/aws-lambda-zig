@@ -388,6 +388,66 @@ test "api: an init error is posted to the init error URL" {
     try testing.expect(std.mem.containsAtLeast(u8, post.body, 1, "Runtime.BadHandlerName"));
 }
 
+test "api: closing a stream with an error sends trailers" {
+    const gpa = testing.allocator;
+
+    var tester: Tester = undefined;
+    try tester.init(gpa, &.{});
+    defer tester.deinit();
+
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+
+    var client: HttpClient = undefined;
+    try HttpClient.init(&client, gpa, tester.origin(), threaded.io());
+    defer client.deinit();
+
+    // Only `streamInvocationClose` sends trailers, and only when the handler
+    // failed after the stream was already open. No entry point reaches it
+    // today, so the test drives the API directly.
+    var buffer: [256]u8 = undefined;
+    var request, var body = try api.streamInvocationOpen(
+        arena.allocator(),
+        &client,
+        &buffer,
+        "id-trailer",
+        "text/plain",
+        "",
+        {},
+    );
+
+    try body.writer.writeAll("partial output");
+    try body.writer.flush();
+
+    _ = try api.streamInvocationClose(arena.allocator(), &request, &body, .{
+        .type = error.KaBoOoOm,
+        .message = "The handler failed mid-stream.",
+    });
+
+    try tester.expectPostCount(1);
+    try tester.expectPath(0, URL_BASE ++ "invocation/id-trailer/response");
+
+    const post = try tester.post(0);
+    try testing.expect(post.chunked);
+    try testing.expectEqualStrings("partial output", post.body);
+    try testing.expectEqualStrings(
+        "Handler.KaBoOoOm",
+        post.trailer("Lambda-Runtime-Function-Error-Type").?,
+    );
+
+    // The error body travels as standard base64.
+    const encoded = post.trailer("Lambda-Runtime-Function-Error-Body").?;
+    var decoded: [256]u8 = undefined;
+    const decoded_len = try std.base64.standard.Decoder.calcSizeForSlice(encoded);
+    try std.base64.standard.Decoder.decode(decoded[0..decoded_len], encoded);
+    try testing.expectEqualStrings(
+        \\{"errorType":"Handler.KaBoOoOm","errorMessage":"The handler failed mid-stream.","stackTrace":[]}
+    , decoded[0..decoded_len]);
+}
+
 test "init: gives up when the API origin is missing" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
