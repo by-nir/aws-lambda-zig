@@ -57,7 +57,7 @@ pub fn encodeResponse(gpa: Allocator, res: Response) ![]const u8 {
     errdefer buffer.deinit();
 
     try buffer.writer.writeByte('{');
-    try buffer.writer.print("\"statusCode\":{d}", .{@intFromEnum(res.status_code)});
+    try buffer.writer.print("\"statusCode\":{d}", .{@backingInt(res.status_code)});
 
     if (res.cookies.len > 0) {
         try buffer.writer.writeAll(",\"cookies\":[");

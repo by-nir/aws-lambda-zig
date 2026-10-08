@@ -21,7 +21,7 @@ fn handler(ctx: lambda.Context, event: []const u8, stream: lambda.Stream) !void 
         if (request.request_context.http.path) |path| if (path.len > 1) {
             const category = path[1..path.len];
             const format = "<h1>News &amp; Updates – Category: <em>{s}</em></h1>";
-            break :blk try std.fmt.allocPrint(ctx.arena, format, .{category});
+            break :blk try ctx.arena.print(format, .{category});
         };
 
         // Default homepage header.

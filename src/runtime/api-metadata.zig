@@ -17,12 +17,11 @@ pub fn getRuntimeMetadata(
     const token = env.get("AWS_LAMBDA_METADATA_TOKEN") orelse
         return error.MissingMetadataToken;
 
-    const uri: std.Uri = try .parse(try std.fmt.allocPrint(
-        arena,
+    const uri: std.Uri = try .parse(try arena.print(
         "http://{s}/2026-01-15/metadata/execution-environment",
         .{endpoint},
     ));
-    const auth = try std.fmt.allocPrint(arena, "Bearer {s}", .{token});
+    const auth = try arena.print("Bearer {s}", .{token});
 
     const req = try client.sendUri(arena, uri, null, .{
         .request = .{ .authorization = .{ .override = auth } },

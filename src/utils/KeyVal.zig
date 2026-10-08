@@ -8,7 +8,7 @@ key: []const u8,
 value: []const u8,
 
 pub fn join(self: @This(), gpa: Allocator, delimeter: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(gpa, "{s}{s}{s}", .{ self.key, delimeter, self.value });
+    return gpa.print("{s}{s}{s}", .{ self.key, delimeter, self.value });
 }
 
 test join {
@@ -37,7 +37,7 @@ test deinit {
 }
 
 pub fn split(string: []const u8, delimeter: []const u8) ?@This() {
-    const index = mem.indexOf(u8, string, delimeter) orelse
+    const index = mem.find(u8, string, delimeter) orelse
         return null;
 
     const skip = index + delimeter.len;

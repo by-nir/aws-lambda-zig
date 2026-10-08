@@ -37,6 +37,7 @@ const glibc_version = std.SemanticVersion{ .major = 2, .minor = 34, .patch = 0 }
 const x86_target: Target.Query = blk: {
     break :blk .{
         .os_tag = .linux,
+        .abi = .gnu,
         .cpu_arch = .x86_64,
         .cpu_features_add = Target.x86.featureSet(&.{.avx2}),
         .glibc_version = glibc_version,
@@ -47,6 +48,7 @@ const x86_target: Target.Query = blk: {
 const arm_target: Target.Query = blk: {
     break :blk .{
         .os_tag = .linux,
+        .abi = .gnu,
         .cpu_arch = .aarch64,
         .cpu_model = .{ .explicit = &Target.aarch64.cpu.neoverse_n1 },
         .cpu_features_add = Target.aarch64.featureSet(&.{.crypto}),

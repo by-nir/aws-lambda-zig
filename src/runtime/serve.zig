@@ -170,7 +170,7 @@ pub const Server = struct {
     pub fn respondFailure(
         self: *@This(),
         err: anyerror,
-        trace: ?*std.builtin.StackTrace,
+        trace: ?*std.lang.StackTrace,
     ) !void {
         log.err("The handler returned an error `{s}`.", .{@errorName(err)});
 

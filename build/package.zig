@@ -9,7 +9,7 @@ pub fn addZipTool(b: *std.Build, source: std.Build.LazyPath) *std.Build.Step.Com
             .root_source_file = source,
             .target = b.graph.host,
             // Packing a large executable in a debug build is slow.
-            .optimize = .ReleaseSafe,
+            .optimize = .safe,
         }),
     });
 }
@@ -24,5 +24,5 @@ pub fn addZipArchive(
 ) std.Build.LazyPath {
     const run = b.addRunArtifact(tool);
     run.addFileArg(exe.getEmittedBin());
-    return run.addOutputFileArg("bootstrap.zip");
+    return run.addOutputFileArg2("bootstrap.zip", .{});
 }

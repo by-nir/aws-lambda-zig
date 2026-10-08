@@ -22,7 +22,7 @@ uri: std.Uri,
 client: Client,
 
 pub fn init(self: *@This(), gpa: Allocator, origin: []const u8, io: Io) !void {
-    const idx = std.mem.indexOfScalar(u8, origin, ':');
+    const idx = std.mem.findScalar(u8, origin, ':');
     self.uri = std.Uri{
         .path = .{ .percent_encoded = "" },
         .scheme = "http",

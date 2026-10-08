@@ -1,5 +1,5 @@
 # AWS Lambda Runtime for Zig
-![Zig v0.16](https://img.shields.io/badge/Zig-v0.16-black?logo=zig&logoColor=F7A41D "Zig v0.16")
+![Zig v0.17](https://img.shields.io/badge/Zig-v0.17-black?logo=zig&logoColor=F7A41D "Zig v0.17")
 [![MIT License](https://img.shields.io/github/license/by-nir/aws-lambda-zig)](/LICENSE)
 
 Write _AWS Lambda_ functions in Zig for blazing-fast invocations and cold starts.
@@ -80,7 +80,7 @@ const lambda = @import("aws_lambda");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseFast,
+        .preferred_optimize_mode = .fast,
     });
 
     // Add an architecture configuration option and resolve a target query.
@@ -156,7 +156,7 @@ const lambda = @import("aws_lambda");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseFast,
+        .preferred_optimize_mode = .fast,
     });
 
     // Add an architecture CLI option (or hard code either `.x86` or `.arm`)

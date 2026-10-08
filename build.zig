@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) void {
 fn addUnitTests(b: *std.Build, zon_mod: *std.Build.Module) void {
     const target = b.standardTargetOptions(.{});
 
-    const lib = b.addModule("lambda", .{
+    const lib = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .imports = &.{
@@ -63,7 +63,7 @@ fn addUnitTests(b: *std.Build, zon_mod: *std.Build.Module) void {
 fn addDemos(b: *std.Build, zon_mod: *std.Build.Module) void {
     const target = resolveTargetQuery(b, archOption(b));
     const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseFast,
+        .preferred_optimize_mode = .fast,
     });
     const lib = b.addModule("lambda", .{
         .root_source_file = b.path("src/root.zig"),
@@ -89,7 +89,7 @@ fn addDemos(b: *std.Build, zon_mod: *std.Build.Module) void {
 fn addDemo(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
     comptime name: []const u8,
     path: []const u8,
     lib: *std.Build.Module,

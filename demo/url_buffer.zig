@@ -205,8 +205,7 @@ fn downloadPage(ctx: lambda.Context, req: lambda.url.Request) ![]const u8 {
 
 /// Render a custom error page for the given path.
 fn errorPage(ctx: lambda.Context, path: []const u8) ![]const u8 {
-    const html = try std.fmt.allocPrint(
-        ctx.arena,
+    const html = try ctx.arena.print(
         global_nav ++
             \\<h1>🥸 Oops...</h1>
             \\<p>Sorry, the page <code>{s}</code> is not here.</p>
@@ -229,8 +228,7 @@ fn crashPage() ![]const u8 {
 
 /// Render a custom error page for the given error.
 fn internalErrorPage(ctx: lambda.Context, err: anyerror) ![]const u8 {
-    const html = try std.fmt.allocPrint(
-        ctx.arena,
+    const html = try ctx.arena.print(
         global_nav ++
             \\<h1>💥 BOOM!</h1>
             \\<p>You broke the server: <code>{s}</code>.</p>

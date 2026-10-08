@@ -61,7 +61,7 @@ pub fn writeArchive(gpa: Allocator, out: *Writer, entry: Entry) Error!void {
     const data = if (packed_smaller) deflated.written() else entry.content;
     const data_len: u32 = @intCast(data.len);
 
-    const crc = std.hash.crc.Crc32.hash(entry.content);
+    const crc = std.hash.Crc32.hash(entry.content);
     const attributes = @as(u32, entry.mode) << 16;
 
     try out.writeStruct(zip.LocalFileHeader{
@@ -80,7 +80,8 @@ pub fn writeArchive(gpa: Allocator, out: *Writer, entry: Entry) Error!void {
     try out.writeAll(entry.name);
     try out.writeAll(data);
 
-    const directory_offset: u32 = @sizeOf(zip.LocalFileHeader) + name_len + data_len;
+    const directory_offset: u32 =
+        @sizeOf(zip.LocalFileHeader) + name_len + data_len;
 
     try out.writeStruct(zip.CentralDirectoryFileHeader{
         .signature = zip.central_file_header_sig,
@@ -128,9 +129,9 @@ fn deflate(gpa: Allocator, out: *Writer, content: []const u8) Error!void {
 /// Reads back the archive’s single central directory header.
 ///
 /// It does not use `zip.EndRecord.findBuffer`, which fails to compile in Zig
-/// 0.16: the function returns `error.EndOfStream`, which its own error set
-/// leaves out. The archive carries no comment, so the end record is simply the
-/// last bytes of it.
+/// 0.16 and 0.17: the function returns `error.EndOfStream`, which its own error
+/// set leaves out. The archive carries no comment, so the end record is simply
+/// the last bytes of it.
 fn readEntryHeader(archive: []const u8) !zip.CentralDirectoryFileHeader {
     var end: std.Io.Reader = .fixed(archive[archive.len - @sizeOf(zip.EndRecord) ..]);
     const end_record = try end.takeStruct(zip.EndRecord, .little);
@@ -194,7 +195,10 @@ test "the entry stays executable" {
     });
 
     const header = try readEntryHeader(archive.written());
-    try testing.expectEqual(@as(u32, MODE_EXECUTABLE) << 16, header.external_file_attributes);
+    try testing.expectEqual(
+        @as(u32, MODE_EXECUTABLE) << 16,
+        header.external_file_attributes,
+    );
 
     // The mode only counts when the archive says it was made on Unix.
     try testing.expectEqual(3, header.version_made_by >> 8);

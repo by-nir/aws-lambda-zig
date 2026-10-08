@@ -98,7 +98,7 @@ pub const Record = struct {
     pub fn trailer(self: Record, name: []const u8) ?[]const u8 {
         var lines = std.mem.splitSequence(u8, self.trailers_raw, "\r\n");
         while (lines.next()) |line| {
-            const separator = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+            const separator = std.mem.findScalar(u8, line, ':') orelse continue;
             if (!std.ascii.eqlIgnoreCase(line[0..separator], name)) continue;
             return std.mem.trim(u8, line[separator + 1 ..], " \t");
         }
@@ -166,7 +166,7 @@ pub fn init(self: *@This(), gpa: std.mem.Allocator, script: []const Event) !void
     errdefer self.env_map.deinit();
 
     var origin_buffer: [32]u8 = undefined;
-    const origin_text = try std.fmt.bufPrint(&origin_buffer, "127.0.0.1:{d}", .{
+    const origin_text = try std.mem.print(&origin_buffer, "127.0.0.1:{d}", .{
         self.address.getPort(),
     });
     try self.env_map.put(ENV_ORIGIN, origin_text);
@@ -329,7 +329,7 @@ fn serveNext(self: *@This(), request: *std.http.Server.Request) !void {
     self.served += 1;
 
     var deadline_buffer: [24]u8 = undefined;
-    const deadline = try std.fmt.bufPrint(&deadline_buffer, "{d}", .{event.deadline_ms});
+    const deadline = try std.mem.print(&deadline_buffer, "{d}", .{event.deadline_ms});
 
     var headers: [5]std.http.Header = .{
         .{ .name = "Lambda-Runtime-Aws-Request-Id", .value = event.request_id },

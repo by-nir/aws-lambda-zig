@@ -157,7 +157,7 @@ pub fn streamInvocationClose(
 ) Error!InvocationSuccessResult {
     var headers: [2]Client.Header = undefined;
     const trailers: []const Client.Header = if (err_req) |err| blk: {
-        const err_type = std.fmt.allocPrint(arena, "Handler.{s}", .{@errorName(err.type)}) catch |e| {
+        const err_type = arena.print("Handler.{s}", .{@errorName(err.type)}) catch |e| {
             log.err("[Send Error] Formatting error type failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
@@ -166,7 +166,7 @@ pub fn streamInvocationClose(
             log.err("[Send Error] Formatting error body failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
-        const value_encoded = std.fmt.allocPrint(arena, "{b64}", .{value}) catch |e| {
+        const value_encoded = arena.print("{b64}", .{value}) catch |e| {
             log.err("[Send Error] Encoding error body failed: {s}", .{@errorName(e)});
             return error.ClientError;
         };
@@ -206,7 +206,7 @@ fn requestPath(
     req_id: []const u8,
     err_phase: []const u8,
 ) ![]const u8 {
-    return std.fmt.allocPrint(arena, fmt, .{req_id}) catch |e| {
+    return arena.print(fmt, .{req_id}) catch |e| {
         log.err(URL_ERROR, .{ err_phase, @errorName(e) });
         return e;
     };
@@ -222,7 +222,7 @@ fn sendError(
 ) !Client.Result {
     // The Runtime API asks for a `<category>.<reason>` error type, the same
     // form the payload’s `errorType` uses.
-    const error_type = std.fmt.allocPrint(arena, "{s}.{s}", .{
+    const error_type = arena.print("{s}.{s}", .{
         err_category,
         @errorName(err.type),
     }) catch |e| {
@@ -301,7 +301,7 @@ const Status = enum(u9) {
     _,
 
     pub fn from(http: std.http.Status) Status {
-        return @enumFromInt(@intFromEnum(http));
+        return @fromBackingInt(@intCast(@backingInt(http)));
     }
 };
 
